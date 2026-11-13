@@ -1352,3 +1352,41 @@ dialog::backdrop {
     transition-duration: 0.01ms !important;
   }
 }
+
+.room-media {
+  min-width: 0;
+}
+.live-video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #130d21;
+}
+.live-video[hidden] {
+  display: none;
+}
+.media-controls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.media-controls .button {
+  white-space: normal;
+}
+.media-confirm {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex-basis: 100%;
+}
+.room-media .form-error {
+  margin-top: 8px;
+}
+.media-live {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+}

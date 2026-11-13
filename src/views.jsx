@@ -10,9 +10,9 @@ import {
   Radio,
   ShoppingBag,
   Store,
-  Video,
 } from "lucide-react";
-import { liveCommand } from "./api";
+import { liveCommand, request } from "./api";
+import { LiveVideo } from "./LiveVideo";
 import {
   Back,
   date,
@@ -32,7 +32,7 @@ import {
 
 const pageSize = 12;
 const liveStatuses = [
-  ["start", "Đang phát"],
+  ["start", "Đang mở"],
   ["end", "Đã kết thúc"],
   ["all", "Tất cả trạng thái"],
 ];
@@ -47,7 +47,7 @@ const channelOptions = [
   ["live", "Trong live"],
 ];
 
-function useData(api, path, query, refresh) {
+function useData(api, path, query, refresh, keepData = false) {
   const queryKey = JSON.stringify(query || {});
   const [state, setState] = useState({ loading: Boolean(path) });
   useEffect(() => {
@@ -56,7 +56,9 @@ function useData(api, path, query, refresh) {
       return;
     }
     const controller = new AbortController();
-    setState({ loading: true });
+    setState((previous) =>
+      keepData ? { data: previous.data, loading: true } : { loading: true },
+    );
     api(path, { query: JSON.parse(queryKey), signal: controller.signal }).then(
       (data) => {
         if (!controller.signal.aborted) setState({ data, loading: false });
@@ -66,7 +68,7 @@ function useData(api, path, query, refresh) {
       },
     );
     return () => controller.abort();
-  }, [api, path, queryKey, refresh]);
+  }, [api, path, queryKey, refresh, keepData]);
   return state;
 }
 
@@ -246,8 +248,8 @@ export function Discover({
         {!listing && (
           <SectionTitle
             icon={Radio}
-            title="Đang phát trực tiếp"
-            description="Ghé các phiên live đang mở"
+            title="Phiên live đang mở"
+            description="Xem phòng và sản phẩm đang bán"
             action="Xem tất cả"
             onAction={() => navigate("live")}
           />
@@ -379,106 +381,82 @@ export function LiveRoom({
   showProduct,
   navigate,
   mode,
-  session,
+  activeUser,
   withAccount,
   notice,
 }) {
   const [page, setPage] = useState(1);
-  const [joining, setJoining] = useState(false);
-  const live = useData(api, `/api/livestreams/${id}`, null, refresh);
+  const live = useData(
+    mode === "api" ? request : api,
+    `/api/livestreams/${id}`,
+    null,
+    refresh,
+    true,
+  );
   const items = useData(
     api,
     `/api/livestreams/${id}/products`,
     { page, page_size: pageSize },
     refresh,
   );
-  async function join() {
-    setJoining(true);
-    try {
-      await liveCommand(
-        mode,
-        session?.token || sessionStorage.getItem("livemart-token"),
-        "join_live",
-        id,
-      );
-      notice("Đã vào phiên live.");
-    } catch (error) {
-      notice(error.message);
-      reload();
-    } finally {
-      setJoining(false);
-    }
-  }
   return (
     <>
       <Back onClick={() => navigate("live")}>Danh sách live</Back>
-      <State {...live} retry={reload}>
-        {live.data && (
-          <>
-            <div className="room-layout">
-              <div className="room-player">
-                <Picture src={live.data.image} fallback={Video} />
-                <div className="room-overlay">
-                  <Video size={32} />
-                  <span>
-                    {live.data.status === "end"
-                      ? "Phiên live đã kết thúc"
-                      : "Phiên này chưa có luồng video"}
-                  </span>
-                </div>
-              </div>
-              <div className="room-details">
-                <span
-                  className={`live-badge ${live.data.status === "end" ? "ended" : ""}`}
-                >
-                  {live.data.status === "start" && <i />}
-                  {live.data.status === "start" ? "LIVE" : "Đã kết thúc"}
-                </span>
-                <h1>{live.data.title}</h1>
-                <p>{live.data.seller_username || "Người bán"}</p>
-                <span>Bắt đầu lúc {date(live.data.started_at)}</span>
-                {live.data.status === "start" && (
-                  <button
-                    className="button primary"
-                    disabled={joining}
-                    onClick={() => withAccount(join)}
-                  >
-                    <Radio size={18} />
-                    {joining ? "Đang kết nối…" : "Tham gia phiên"}
-                  </button>
-                )}
-              </div>
-            </div>
-            <section className="content-section">
-              <SectionTitle icon={ShoppingBag} title="Sản phẩm trong phiên" />
-              <State
-                {...items}
-                empty={
-                  !items.data?.data.length && "Phiên này chưa có sản phẩm."
-                }
-                retry={reload}
+      {live.data ? (
+        <>
+          <div className="room-layout">
+            <LiveVideo
+              api={api}
+              live={live.data}
+              mode={mode}
+              isOwner={activeUser?.user_id === live.data.seller_id}
+              withAccount={withAccount}
+              onEnded={(message) => {
+                if (message) notice(message);
+                reload();
+              }}
+            />
+            <div className="room-details">
+              <span
+                className={`live-badge ${live.data.status === "end" ? "ended" : ""}`}
               >
-                <div className="card-grid">
-                  {items.data?.data.map((p) => (
-                    <ProductCard
-                      key={p.id}
-                      product={p}
-                      live
-                      onOpen={() => showProduct(p, live.data)}
-                      onBuy={
-                        live.data.status === "start"
-                          ? () => buy(p, live.data)
-                          : undefined
-                      }
-                    />
-                  ))}
-                </div>
-                <Pagination result={items.data} onChange={setPage} />
-              </State>
-            </section>
-          </>
-        )}
-      </State>
+                {live.data.status === "start" && <i />}
+                {live.data.status === "start" ? "Đang mở" : "Đã kết thúc"}
+              </span>
+              <h1>{live.data.title}</h1>
+              <p>{live.data.seller_username || "Người bán"}</p>
+              <span>Bắt đầu lúc {date(live.data.started_at)}</span>
+            </div>
+          </div>
+          <section className="content-section">
+            <SectionTitle icon={ShoppingBag} title="Sản phẩm trong phiên" />
+            <State
+              {...items}
+              empty={!items.data?.data.length && "Phiên này chưa có sản phẩm."}
+              retry={reload}
+            >
+              <div className="card-grid">
+                {items.data?.data.map((p) => (
+                  <ProductCard
+                    key={p.id}
+                    product={p}
+                    live
+                    onOpen={() => showProduct(p, live.data)}
+                    onBuy={
+                      live.data.status === "start"
+                        ? () => buy(p, live.data)
+                        : undefined
+                    }
+                  />
+                ))}
+              </div>
+              <Pagination result={items.data} onChange={setPage} />
+            </State>
+          </section>
+        </>
+      ) : (
+        <State {...live} retry={reload} />
+      )}
     </>
   );
 }
@@ -777,10 +755,11 @@ export function Seller(props) {
     },
     refresh,
   );
-  const done = (message) => {
+  const done = (message, liveId) => {
     setEditor(null);
     notice(message);
     reload();
+    if (liveId) navigate("live", liveId);
   };
   function switchTab(next) {
     setTab(next);
@@ -898,9 +877,7 @@ export function Seller(props) {
                       <div className="row-main">
                         <strong>{live.title}</strong>
                         <span>
-                          {live.status === "start"
-                            ? "Đang phát"
-                            : "Đã kết thúc"}{" "}
+                          {live.status === "start" ? "Đang mở" : "Đã kết thúc"}{" "}
                           · {date(live.started_at)}
                         </span>
                       </div>
@@ -973,6 +950,8 @@ function SellerEditor({ editor, api, mode, session, close, done }) {
     setWorking(true);
     const form = new FormData(event.currentTarget);
     try {
+      let openedLiveId;
+      let mediaClosed = true;
       if (kind === "product") {
         const body = {
           name: form.get("name").trim(),
@@ -991,10 +970,16 @@ function SellerEditor({ editor, api, mode, session, close, done }) {
           body: { quantity_delta: delta },
         });
       } else if (kind === "delete") await api(path, { method: "DELETE" });
-      else {
+      else if (kind === "end_live" && mode === "api") {
+        const result = await api(`/api/livestreams/${live.id}/end`, {
+          method: "POST",
+        });
+        mediaClosed = result.media_closed;
+      } else {
         const content = live?.id || form.get("title").trim();
         if (!content) throw new Error("Nhập tiêu đề live.");
-        await liveCommand(mode, session?.token, kind, content);
+        const result = await liveCommand(mode, session?.token, kind, content);
+        if (kind === "create_live") openedLiveId = result.id;
       }
       done(
         {
@@ -1002,8 +987,11 @@ function SellerEditor({ editor, api, mode, session, close, done }) {
           stock: "Đã cập nhật tồn kho.",
           delete: "Đã xóa sản phẩm.",
           create_live: "Đã tạo phiên live.",
-          end_live: "Đã kết thúc phiên live.",
+          end_live: mediaClosed
+            ? "Đã kết thúc phiên live."
+            : "Phiên đã kết thúc. LiveKit chưa xác nhận đóng phòng video.",
         }[kind],
+        openedLiveId,
       );
     } catch (err) {
       setError(err.message);
