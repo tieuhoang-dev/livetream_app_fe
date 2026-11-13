@@ -484,9 +484,10 @@ export function LiveRoom({
                     key={p.id}
                     product={p}
                     live
+                    liveEnded={!roomOpen}
                     onOpen={() => showProduct(p, live.data)}
                     onBuy={
-                      live.data.status === "start"
+                      roomOpen && p.status !== "removed"
                         ? () => buy(p, live.data)
                         : undefined
                     }
@@ -499,6 +500,7 @@ export function LiveRoom({
           {inventoryOpen && isOwner && (
             <LiveInventory
               api={api}
+              mode={mode}
               live={live.data}
               activeUser={activeUser}
               refresh={refresh}
@@ -980,7 +982,7 @@ export function Seller(props) {
       )}
       {selectedLive && (
         <LiveInventory
-          {...{ api, refresh, reload, activeUser, notice }}
+          {...{ api, mode, refresh, reload, activeUser, notice }}
           live={selectedLive}
           close={() => setSelectedLive(null)}
         />
@@ -1156,6 +1158,7 @@ function SellerEditor({ editor, api, mode, session, close, done }) {
 
 function LiveInventory({
   api,
+  mode,
   live,
   activeUser,
   refresh,
@@ -1168,11 +1171,21 @@ function LiveInventory({
   const [page, setPage] = useState(1);
   const [productSearch, setProductSearch] = useState("");
   const [productId, setProductId] = useState("");
-  const path = `/api/livestreams/${live.id}/products`;
+  const livePath = `/api/livestreams/${live.id}`;
+  const current = useData(
+    api,
+    live.status === "start" ? livePath : null,
+    null,
+    refresh,
+    true,
+    mode === "api" ? 5000 : 0,
+  );
+  const canEdit = live.status === "start" && current.data?.status === "start";
+  const path = `${livePath}/products`;
   const items = useData(api, path, { page, page_size: pageSize }, refresh);
   const stock = useData(
     api,
-    live.status === "start" ? "/api/products" : null,
+    canEdit ? "/api/products" : null,
     {
       seller_id: activeUser.user_id,
       in_stock: true,
@@ -1191,10 +1204,11 @@ function LiveInventory({
       notice(
         method === "POST"
           ? "Đã thêm sản phẩm vào live."
-          : "Đã gỡ sản phẩm khỏi live.",
+          : "Đã ngừng bán sản phẩm trong live.",
       );
     } catch (err) {
       setError(err.message);
+      if (err.status === 409) reload();
     } finally {
       setWorking(false);
     }
@@ -1216,23 +1230,30 @@ function LiveInventory({
                 <div>
                   <strong>{item.name}</strong>
                   <span>
-                    {money(item.discount_price)} · Kho {item.stock_quantity}
+                    {money(item.discount_price)}
+                    {item.status === "removed"
+                      ? " · Đã ngừng bán"
+                      : canEdit
+                        ? ` · Kho ${item.stock_quantity}`
+                        : ""}
                   </span>
                 </div>
               </div>
-              <button
-                className="button danger"
-                disabled={working}
-                onClick={() => update("DELETE", item)}
-              >
-                Gỡ
-              </button>
+              {canEdit && item.status !== "removed" && (
+                <button
+                  className="button danger"
+                  disabled={working}
+                  onClick={() => update("DELETE", item)}
+                >
+                  Ngừng bán
+                </button>
+              )}
             </div>
           ))}
         </div>
         <Pagination result={items.data} onChange={setPage} />
       </State>
-      {live.status === "start" && (
+      {canEdit && (
         <>
           <SearchBox
             placeholder="Tìm trong kho của bạn…"
@@ -1308,6 +1329,11 @@ function LiveInventory({
             </p>
           )}
         </>
+      )}
+      {current.error && (
+        <p className="form-error" role="alert">
+          {current.error.message}
+        </p>
       )}
       {error && (
         <p className="form-error" role="alert">

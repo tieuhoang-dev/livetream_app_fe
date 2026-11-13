@@ -18,6 +18,7 @@ const messages = {
   invalid_query: "Bộ lọc chưa hợp lệ.",
   invalid_price: "Mức giá không hợp lệ.",
   product_has_active_orders: "Sản phẩm còn đơn đang xử lý trong live.",
+  product_not_found_in_livestream: "Sản phẩm hiện không được bán trong live.",
   product_already_in_livestream: "Sản phẩm đã có trong live.",
   "User not verified": "Tài khoản chưa xác thực email.",
   "Invalid password": "Mật khẩu không đúng.",

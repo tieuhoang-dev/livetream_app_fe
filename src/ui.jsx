@@ -100,7 +100,18 @@ export function LiveCard({ live, onOpen }) {
   );
 }
 
-export function ProductCard({ product, onOpen, onBuy, live = false }) {
+export function ProductCard({
+  product,
+  onOpen,
+  onBuy,
+  live = false,
+  liveEnded = false,
+}) {
+  const stockLabel = product.is_pinned
+    ? "Đã ghim"
+    : product.stock_quantity > 0
+      ? `Còn ${product.stock_quantity}`
+      : "Hết hàng";
   return (
     <article className="product-card">
       <button
@@ -110,11 +121,11 @@ export function ProductCard({ product, onOpen, onBuy, live = false }) {
       >
         <Picture src={product.image_url} />
         <span className="stock-badge">
-          {product.is_pinned
-            ? "Đã ghim"
-            : product.stock_quantity > 0
-              ? `Còn ${product.stock_quantity}`
-              : "Hết hàng"}
+          {product.status === "removed"
+            ? "Đã ngừng bán"
+            : liveEnded
+              ? "Phiên đã kết thúc"
+              : stockLabel}
         </span>
       </button>
       <div className="product-info">

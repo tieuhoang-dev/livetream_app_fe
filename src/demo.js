@@ -190,10 +190,12 @@ export function demoRequest(
           (status === "all" || live.status === status) &&
           matches(live.title, query.q) &&
           (!query.seller_id || live.seller_id === query.seller_id) &&
-          (!query.product_id ||
-            allocations[live.id]?.some(
-              (p) => p.product_id === query.product_id,
-            )),
+            (!query.product_id ||
+              allocations[live.id]?.some(
+                (p) =>
+                  p.product_id === query.product_id &&
+                  (live.status !== "start" || p.status !== "removed"),
+              )),
       );
       if (query.sort === "oldest") rows.reverse();
       return page(rows, query);
@@ -232,13 +234,21 @@ export function demoRequest(
     const items = allocations[key] ?? [];
     if (method === "GET")
       return page(
-        [...items].sort((a, b) => Number(b.is_pinned) - Number(a.is_pinned)),
+        [...items].sort(
+          (a, b) =>
+            Number(a.status === "removed") - Number(b.status === "removed") ||
+            Number(b.is_pinned) - Number(a.is_pinned),
+        ),
         query,
       );
+    if (live.status !== "start")
+      throw Object.assign(new Error("Phiên live đã kết thúc."), { status: 409 });
     const product = get(products, productId || body.product_id);
+    const selling = items.find(
+      (entry) => entry.product_id === product.id && entry.status !== "removed",
+    );
     if (method === "DELETE") {
-      const item = items.find((entry) => entry.product_id === productId);
-      if (!item) throw new Error("Không tìm thấy sản phẩm trong live.");
+      if (!selling) throw new Error("Không tìm thấy sản phẩm trong live.");
       if (
         orders.some(
           (order) =>
@@ -248,13 +258,13 @@ export function demoRequest(
         )
       )
         throw new Error("Sản phẩm còn đơn đang xử lý.");
-      product.stock_quantity += item.stock_quantity;
-      allocations[key] = items.filter((entry) => entry !== item);
+      product.stock_quantity += selling.stock_quantity;
+      selling.stock_quantity = 0;
+      selling.status = "removed";
       store(state);
       return null;
     }
-    if (items.some((entry) => entry.product_id === product.id))
-      throw new Error("Sản phẩm đã có trong live.");
+    if (selling) throw new Error("Sản phẩm đã có trong live.");
     if (product.stock_quantity < body.stock_quantity)
       throw new Error("Kho không đủ hàng.");
     product.stock_quantity -= body.stock_quantity;
@@ -267,6 +277,7 @@ export function demoRequest(
         image_url: product.image_url,
         description: product.description,
         original_price: product.price,
+        status: "active",
       },
     ];
     store(state);
@@ -295,7 +306,8 @@ export function demoRequest(
       if (live && live.status !== "start") throw new Error("Live đã kết thúc.");
       const item = live
         ? (allocations[live.id] || []).find(
-            (entry) => entry.product_id === product.id,
+            (entry) =>
+              entry.product_id === product.id && entry.status !== "removed",
           )
         : product;
       if (!item || item.stock_quantity < body.quantity)
@@ -345,7 +357,8 @@ export function demoRequest(
         const inventory =
           live?.status === "start"
             ? allocations[live.id].find(
-                (entry) => entry.product_id === line.product_id,
+                (entry) =>
+                  entry.product_id === line.product_id && entry.status !== "removed",
               )
             : get(products, line.product_id);
         inventory.stock_quantity += line.quantity;
@@ -380,9 +393,11 @@ export function demoLiveCommand(type, content) {
     live.status = "end";
     live.ended_at = timestamp(0);
     for (const item of state.allocations[live.id] || []) {
+      if (item.status === "removed") continue;
       get(state.products, item.product_id).stock_quantity +=
         item.stock_quantity;
       item.stock_quantity = 0;
+      item.status = "closed";
     }
     store(state);
   }
