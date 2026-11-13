@@ -76,7 +76,7 @@ export function LiveCard({ live, onOpen }) {
         <Picture src={live.image} fallback={Radio} />
         <span className={`live-badge ${live.status === "end" ? "ended" : ""}`}>
           {live.status === "start" && <i />}
-          {live.status === "start" ? "LIVE" : "Đã kết thúc"}
+          {live.status === "start" ? "Đang mở" : "Đã kết thúc"}
         </span>
         {live.category && (
           <span className="card-category">{live.category}</span>

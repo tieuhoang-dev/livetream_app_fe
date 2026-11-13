@@ -89,7 +89,7 @@ function App() {
   }
   function withAccount(next) {
     if (activeUser) {
-      next();
+      next(session?.token);
       return;
     }
     setModal({ type: "auth", after: next });
@@ -103,7 +103,7 @@ function App() {
     if (!next) throw new Error("Phiên đăng nhập không hợp lệ.");
     setSession(next);
     setModal(null);
-    modal?.after?.();
+    modal?.after?.(next.token);
   }
   function signOut() {
     sessionStorage.removeItem("livemart-token");

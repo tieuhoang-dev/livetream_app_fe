@@ -28,11 +28,20 @@ Bản build không có `VITE_PUBLIC_API_URL` mở ở chế độ mẫu. Chọn 
 ## Luồng tích hợp
 
 - Đăng nhập, đăng ký, xác thực OTP và đặt lại mật khẩu. Backend cần cấu hình Brevo để gửi OTP.
-- Tìm live theo tiêu đề, trạng thái, người bán và sản phẩm. Xem sản phẩm trong live, đặt hàng theo giá live và gửi lệnh tham gia qua WebSocket.
+- Tìm live theo tiêu đề, trạng thái, người bán và sản phẩm. Xem video và sản phẩm trong live, đặt hàng theo giá live.
 - Mua ngoài live, lọc hàng còn kho, xem đơn và ghi nhận thanh toán nội bộ, hủy hoặc hoàn đơn.
 - Kênh người bán quản lý danh mục, điều chỉnh kho, tạo/kết thúc live, gắn/gỡ sản phẩm và xem đơn ngoài live.
 
-Backend hiện quản lý phiên live và sản phẩm. Phát video, chat phòng và thanh toán qua cổng cần thêm tích hợp backend.
+## Phát và xem video trực tiếp
+
+1. Cập nhật cả frontend và backend lên bản tích hợp LiveKit rồi chạy `npm ci` lại.
+2. Chạy LiveKit và cấu hình `.env` của Go theo [hướng dẫn backend](https://github.com/tieuhoang-dev/livetream_app/blob/main/API.md#video-qua-livekit).
+3. Mở `http://localhost:5173` và đăng nhập. Vào **Kênh người bán → Phiên live → Tạo phiên live**, rồi bấm **Bắt đầu phát** trong phòng và cho phép camera/micro.
+4. Dùng một tài khoản khác trong cửa sổ ẩn danh, mở cùng phòng và bấm **Xem trực tiếp**. Trên trình duyệt chặn tự phát âm thanh, bấm **Bật âm thanh**.
+
+**Dừng phát** tắt camera và micro, giữ phiên bán hàng mở để phát lại. **Kết thúc phiên** đóng phiên và yêu cầu LiveKit ngắt người xem. Để phát từ điện thoại, mở frontend qua HTTPS và dùng một endpoint LiveKit WSS mà điện thoại có thể truy cập. `ws://127.0.0.1:7880` dùng cho thử nghiệm trên cùng máy. Chế độ dữ liệu mẫu chỉ mô phỏng phòng và sản phẩm.
+
+Chat phòng và thanh toán qua cổng cần thêm tích hợp backend.
 
 ## Đưa repo lên GitHub
 
