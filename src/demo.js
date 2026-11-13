@@ -275,8 +275,12 @@ export function demoRequest(
   if (area === "orders" || area === "sales") {
     const rows =
       area === "sales"
-        ? orders.filter((o) => !o.livestream_id && o.seller_id === host)
-        : orders;
+        ? orders.filter(
+            (o) =>
+              o.seller_id === host &&
+              (key === "offline" ? !o.livestream_id : o.buyer_id !== host),
+          )
+        : orders.filter((o) => !o.buyer_id || o.buyer_id === host);
     const orderId = area === "sales" ? action : key;
     if (method === "GET" && orderId) return get(rows, orderId);
     if (method === "GET")
@@ -289,10 +293,12 @@ export function demoRequest(
         ),
         query,
       );
-    if (!key) {
+    if (area === "orders" && !key) {
       const product = get(products, body.product_id);
       const live = body.livestream_id ? get(lives, body.livestream_id) : null;
       if (live && live.status !== "start") throw new Error("Live đã kết thúc.");
+      if (product.seller_id === host)
+        throw new Error("Bạn không thể đặt mua sản phẩm của chính mình.");
       const item = live
         ? (allocations[live.id] || []).find(
             (entry) => entry.product_id === product.id,
@@ -304,6 +310,7 @@ export function demoRequest(
       const price = live ? item.discount_price : product.price;
       const order = {
         id: id(),
+        buyer_id: host,
         seller_id: product.seller_id,
         livestream_id: live?.id ?? null,
         total_amount: price * body.quantity,
@@ -328,18 +335,28 @@ export function demoRequest(
       store(state);
       return { ...order, order_id: order.id };
     }
-    const order = get(orders, key);
+    const command = area === "sales" ? productId : action;
+    if (
+      (area === "orders" && command !== "cancel") ||
+      (area === "sales" &&
+        (key !== "orders" || !["pay", "refund"].includes(command)))
+    )
+      throw new Error("Bạn không có quyền thực hiện thao tác này.");
+    const order = get(rows, orderId);
     const transitions = {
       pay: ["pending", "paid"],
       cancel: ["pending", "cancelled"],
       refund: ["paid", "refunded"],
     };
-    const [from, to] = transitions[action];
+    const [from, to] = transitions[command];
     if (order.status !== from) throw new Error("Trạng thái đơn đã thay đổi.");
+    if (command === "refund" && !body.refund_reason?.trim())
+      throw new Error("Hãy nhập lý do hoàn tiền.");
     order.status = to;
     order.payment.status = to;
-    if (action === "refund") order.refund_reason = body.refund_reason;
-    if (action !== "pay") {
+    if (command === "pay") order.payment.payment_method = body.payment_method;
+    if (command === "refund") order.refund_reason = body.refund_reason.trim();
+    if (command !== "pay") {
       const live = lives.find((entry) => entry.id === order.livestream_id);
       for (const line of order.items) {
         const inventory =

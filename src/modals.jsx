@@ -175,7 +175,7 @@ export function AuthModal({ close, onLogin, user, onLogout }) {
   );
 }
 
-export function ProductModal({ product, live, close, onBuy }) {
+export function ProductModal({ product, live, close, onBuy, isOwnProduct }) {
   return (
     <Modal title={product.name} close={close}>
       <div className="detail-photo">
@@ -194,7 +194,9 @@ export function ProductModal({ product, live, close, onBuy }) {
       )}
       <button
         className="button primary wide"
-        disabled={!product.stock_quantity || (live && live.status !== "start")}
+        disabled={
+          isOwnProduct || !product.stock_quantity || (live && live.status !== "start")
+        }
         onClick={onBuy}
       >
         <ShoppingBag size={18} /> Đặt mua

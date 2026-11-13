@@ -544,7 +544,7 @@ export function Orders({
   const [status, setStatus] = useState("");
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState(initialId || null);
-  const path = seller ? "/api/sales/offline" : "/api/orders";
+  const path = seller ? "/api/sales/orders" : "/api/orders";
   useEffect(() => {
     setSelected(initialId || null);
   }, [initialId]);
@@ -570,17 +570,15 @@ export function Orders({
       ) : (
         <>
           <div className="filter-panel filter-row order-filters">
-            {!seller && (
-              <Filter
-                label="Kênh mua"
-                value={channel}
-                options={channelOptions}
-                onChange={(value) => {
-                  setChannel(value);
-                  setPage(1);
-                }}
-              />
-            )}
+            <Filter
+              label={seller ? "Kênh bán" : "Kênh mua"}
+              value={channel}
+              options={channelOptions}
+              onChange={(value) => {
+                setChannel(value);
+                setPage(1);
+              }}
+            />
             <Filter
               label="Trạng thái"
               value={status}
@@ -646,8 +644,13 @@ function OrderDetail({ api, path, refresh, reload, close, seller, notice }) {
   const [action, setAction] = useState("");
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
+  const order = detail.data;
+  const allowedAction = seller
+    ? { pending: "pay", paid: "refund" }[order?.status]
+    : { pending: "cancel" }[order?.status];
   async function submit(event) {
     event.preventDefault();
+    if (working || !action || action !== allowedAction) return;
     setWorking(true);
     setError("");
     const body =
@@ -671,7 +674,11 @@ function OrderDetail({ api, path, refresh, reload, close, seller, notice }) {
       setWorking(false);
     }
   }
-  const order = detail.data;
+  const actionLabels = {
+    pay: "Ghi nhận thanh toán",
+    refund: "Ghi nhận hoàn tiền",
+    cancel: "Hủy đơn",
+  };
   return (
     <Modal title="Chi tiết đơn hàng" close={close}>
       <State {...detail} retry={reload}>
@@ -710,45 +717,33 @@ function OrderDetail({ api, path, refresh, reload, close, seller, notice }) {
             {order.refund_reason && (
               <p>Lý do hoàn đơn: {order.refund_reason}</p>
             )}
-            {!seller && !action && (
+            {allowedAction && action !== allowedAction && (
               <div className="inline-actions">
-                {order.status === "pending" && (
-                  <>
-                    <button
-                      className="button primary"
-                      onClick={() => setAction("pay")}
-                    >
-                      Ghi nhận thanh toán
-                    </button>
-                    <button
-                      className="button secondary"
-                      onClick={() => setAction("cancel")}
-                    >
-                      Hủy đơn
-                    </button>
-                  </>
-                )}
-                {order.status === "paid" && (
-                  <button
-                    className="button secondary"
-                    onClick={() => setAction("refund")}
-                  >
-                    Hoàn đơn
-                  </button>
-                )}
+                <button
+                  className={seller ? "button primary" : "button secondary"}
+                  onClick={() => {
+                    setError("");
+                    setAction(allowedAction);
+                  }}
+                >
+                  {actionLabels[allowedAction]}
+                </button>
               </div>
             )}
-            {action && (
+            {action && action === allowedAction && (
               <form className="stack-form" onSubmit={submit}>
                 {action === "refund" ? (
-                  <label>
-                    Lý do hoàn đơn
-                    <input name="reason" required maxLength={255} />
-                  </label>
+                  <>
+                    <p>Chỉ xác nhận sau khi đã hoàn tiền cho người mua.</p>
+                    <label>
+                      Lý do hoàn tiền
+                      <input name="reason" required maxLength={255} />
+                    </label>
+                  </>
                 ) : (
                   <p>
                     {action === "pay"
-                      ? "Thao tác này ghi nhận thanh toán trong hệ thống."
+                      ? "Chỉ xác nhận sau khi đã nhận tiền từ người mua."
                       : "Xác nhận hủy đơn và trả hàng về kho?"}
                   </p>
                 )}
@@ -830,7 +825,7 @@ export function Seller(props) {
           <Store size={18} /> KÊNH NGƯỜI BÁN
         </div>
         <h1>Quản lý cửa hàng</h1>
-        <p>Quản lý sản phẩm, kho, phiên live và đơn bán ngoài live.</p>
+        <p>Quản lý sản phẩm, kho, phiên live và đơn bán.</p>
       </div>
       {!activeUser ? (
         <LoginPrompt signIn={signIn} />
@@ -841,7 +836,7 @@ export function Seller(props) {
               {[
                 ["products", "Sản phẩm"],
                 ["lives", "Phiên live"],
-                ["sales", "Đơn ngoài live"],
+                ["sales", "Đơn bán"],
               ].map(([key, label]) => (
                 <button
                   key={key}
