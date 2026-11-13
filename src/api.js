@@ -10,6 +10,9 @@ const messages = {
   live_media_unavailable:
     "Backend chưa cấu hình LiveKit. Kiểm tra LIVEKIT_URL, LIVEKIT_API_KEY và LIVEKIT_API_SECRET.",
   invalid_live_comment: "Nhập bình luận từ 1 đến 300 ký tự.",
+  live_comment_failed: "Không lưu được bình luận. Hãy thử lại.",
+  live_comment_not_joined: "Chưa kết nối với phòng bình luận.",
+  livestream_not_found: "Không tìm thấy phiên live.",
   livestream_not_active: "Phiên live đã kết thúc.",
   order_not_pending: "Đơn hàng đã đổi trạng thái. Hãy tải lại.",
   order_not_paid: "Đơn chưa ở trạng thái đã thanh toán.",
@@ -97,11 +100,8 @@ export function readSession() {
 export function liveCommand(mode, token, type, content) {
   if (mode === "demo")
     return Promise.resolve().then(() => demoLiveCommand(type, content));
-  const url = new URL(`${apiOrigin}/api/auth/ws`, location.origin);
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  url.searchParams.set("token", token);
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(url);
+    const ws = openLiveSocket(token);
     let settled = false;
     const timeout = setTimeout(
       () =>
@@ -140,6 +140,18 @@ export function liveCommand(mode, token, type, content) {
         ),
       );
   });
+}
+
+export function openLiveSocket(token, scope) {
+  const url = new URL(`${apiOrigin}/api/auth/ws`, location.origin);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  url.searchParams.set("token", token);
+  if (scope) url.searchParams.set("scope", scope);
+  return new WebSocket(url);
+}
+
+export function liveCommentError(code) {
+  return messages[code] || messages.live_comment_failed;
 }
 
 export function mediaURL(value) {
