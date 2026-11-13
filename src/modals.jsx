@@ -176,6 +176,12 @@ export function AuthModal({ close, onLogin, user, onLogout }) {
 }
 
 export function ProductModal({ product, live, close, onBuy }) {
+  const availability =
+    product.status === "removed"
+      ? "Đã ngừng bán"
+      : live && live.status !== "start"
+        ? "Phiên đã kết thúc"
+        : null;
   return (
     <Modal title={product.name} close={close}>
       <div className="detail-photo">
@@ -184,9 +190,10 @@ export function ProductModal({ product, live, close, onBuy }) {
       <div className="modal-meta">
         <strong>{money(live ? product.discount_price : product.price)}</strong>
         <span>
-          {product.stock_quantity > 0
-            ? `Còn ${product.stock_quantity} sản phẩm`
-            : "Hết hàng"}
+          {availability ||
+            (product.stock_quantity > 0
+              ? `Còn ${product.stock_quantity} sản phẩm`
+              : "Hết hàng")}
         </span>
       </div>
       {product.description && (
@@ -194,7 +201,7 @@ export function ProductModal({ product, live, close, onBuy }) {
       )}
       <button
         className="button primary wide"
-        disabled={!product.stock_quantity || (live && live.status !== "start")}
+        disabled={!product.stock_quantity || Boolean(availability)}
         onClick={onBuy}
       >
         <ShoppingBag size={18} /> Đặt mua
