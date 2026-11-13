@@ -95,7 +95,15 @@ function App() {
     setModal({ type: "auth", after: next });
   }
   function buy(product, live) {
-    withAccount(() => setModal({ type: "checkout", product, live }));
+    withAccount((token) => {
+      const buyerId =
+        activeUser?.user_id || (token && readSession()?.profile.user_id);
+      if (buyerId === (live ? live.seller_id : product.seller_id)) {
+        setNotice("Bạn không thể đặt mua sản phẩm của chính mình.");
+        return;
+      }
+      setModal({ type: "checkout", product, live });
+    });
   }
   function signIn(token) {
     sessionStorage.setItem("livemart-token", token);
@@ -312,6 +320,10 @@ function App() {
         <ProductModal
           product={modal.product}
           live={modal.live}
+          isOwnProduct={
+            activeUser?.user_id ===
+            (modal.live ? modal.live.seller_id : modal.product.seller_id)
+          }
           close={close}
           onBuy={() => buy(modal.product, modal.live)}
         />
