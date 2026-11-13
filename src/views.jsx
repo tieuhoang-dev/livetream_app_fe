@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { liveCommand, request } from "./api";
 import { LiveVideo } from "./LiveVideo";
+import { LiveComments } from "./LiveComments";
 import {
   Back,
   date,
@@ -47,7 +48,7 @@ const channelOptions = [
   ["live", "Trong live"],
 ];
 
-function useData(api, path, query, refresh, keepData = false) {
+function useData(api, path, query, refresh, keepData = false, pollMs = 0) {
   const queryKey = JSON.stringify(query || {});
   const [state, setState] = useState({ loading: Boolean(path) });
   useEffect(() => {
@@ -56,19 +57,38 @@ function useData(api, path, query, refresh, keepData = false) {
       return;
     }
     const controller = new AbortController();
+    let timer;
     setState((previous) =>
-      keepData ? { data: previous.data, loading: true } : { loading: true },
+      keepData
+        ? { data: previous.data, loading: !previous.data }
+        : { loading: true },
     );
-    api(path, { query: JSON.parse(queryKey), signal: controller.signal }).then(
-      (data) => {
+    async function read() {
+      try {
+        const data = await api(path, {
+          query: JSON.parse(queryKey),
+          signal: controller.signal,
+        });
         if (!controller.signal.aborted) setState({ data, loading: false });
-      },
-      (error) => {
-        if (!controller.signal.aborted) setState({ error, loading: false });
-      },
-    );
-    return () => controller.abort();
-  }, [api, path, queryKey, refresh, keepData]);
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          setState((previous) => ({
+            data: keepData && error.status !== 404 ? previous.data : undefined,
+            error,
+            loading: false,
+          }));
+        }
+      } finally {
+        if (!controller.signal.aborted && pollMs)
+          timer = setTimeout(read, pollMs);
+      }
+    }
+    void read();
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [api, path, queryKey, refresh, keepData, pollMs]);
   return state;
 }
 
@@ -386,19 +406,25 @@ export function LiveRoom({
   notice,
 }) {
   const [page, setPage] = useState(1);
+  const [inventoryOpen, setInventoryOpen] = useState(false);
   const live = useData(
     mode === "api" ? request : api,
     `/api/livestreams/${id}`,
     null,
     refresh,
     true,
+    mode === "api" ? 5000 : 0,
   );
+  const roomOpen = live.data?.status === "start";
   const items = useData(
     api,
     `/api/livestreams/${id}/products`,
     { page, page_size: pageSize },
     refresh,
+    true,
+    mode === "api" && roomOpen ? 5000 : 0,
   );
+  const isOwner = activeUser?.user_id === live.data?.seller_id;
   return (
     <>
       <Back onClick={() => navigate("live")}>Danh sách live</Back>
@@ -409,23 +435,40 @@ export function LiveRoom({
               api={api}
               live={live.data}
               mode={mode}
-              isOwner={activeUser?.user_id === live.data.seller_id}
+              isOwner={isOwner}
               withAccount={withAccount}
               onEnded={(message) => {
                 if (message) notice(message);
                 reload();
               }}
             />
-            <div className="room-details">
-              <span
-                className={`live-badge ${live.data.status === "end" ? "ended" : ""}`}
-              >
-                {live.data.status === "start" && <i />}
-                {live.data.status === "start" ? "Đang mở" : "Đã kết thúc"}
-              </span>
-              <h1>{live.data.title}</h1>
-              <p>{live.data.seller_username || "Người bán"}</p>
-              <span>Bắt đầu lúc {date(live.data.started_at)}</span>
+            <div className="room-sidebar">
+              <div className="room-details">
+                <span
+                  className={`live-badge ${live.data.status === "end" ? "ended" : ""}`}
+                >
+                  {live.data.status === "start" && <i />}
+                  {live.data.status === "start" ? "Đang mở" : "Đã kết thúc"}
+                </span>
+                <h1>{live.data.title}</h1>
+                <p>{live.data.seller_username || "Người bán"}</p>
+                <span>Bắt đầu lúc {date(live.data.started_at)}</span>
+                {isOwner && roomOpen && (
+                  <button
+                    className="button secondary"
+                    onClick={() => setInventoryOpen(true)}
+                  >
+                    <Plus size={18} /> Thêm hàng
+                  </button>
+                )}
+              </div>
+              <LiveComments
+                api={api}
+                live={live.data}
+                activeUser={activeUser}
+                withAccount={withAccount}
+                onEnded={reload}
+              />
             </div>
           </div>
           <section className="content-section">
@@ -453,6 +496,20 @@ export function LiveRoom({
               <Pagination result={items.data} onChange={setPage} />
             </State>
           </section>
+          {inventoryOpen && isOwner && (
+            <LiveInventory
+              api={api}
+              live={live.data}
+              activeUser={activeUser}
+              refresh={refresh}
+              reload={() => {
+                setPage(1);
+                reload();
+              }}
+              notice={notice}
+              close={() => setInventoryOpen(false)}
+            />
+          )}
         </>
       ) : (
         <State {...live} retry={reload} />

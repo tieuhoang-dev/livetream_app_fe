@@ -9,6 +9,7 @@ const messages = {
   insufficient_stock: "Số lượng còn trong kho không đủ.",
   live_media_unavailable:
     "Backend chưa cấu hình LiveKit. Kiểm tra LIVEKIT_URL, LIVEKIT_API_KEY và LIVEKIT_API_SECRET.",
+  invalid_live_comment: "Nhập bình luận từ 1 đến 300 ký tự.",
   livestream_not_active: "Phiên live đã kết thúc.",
   order_not_pending: "Đơn hàng đã đổi trạng thái. Hãy tải lại.",
   order_not_paid: "Đơn chưa ở trạng thái đã thanh toán.",
