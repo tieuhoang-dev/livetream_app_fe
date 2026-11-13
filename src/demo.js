@@ -200,6 +200,35 @@ export function demoRequest(
     }
     const live = get(lives, key);
     if (!action) return live;
+    if (action === "comments") {
+      state.comments ??= {};
+      const comments = (state.comments[key] ??= []);
+      if (method === "GET") {
+        const after = Number(query.after || 0);
+        const unread = after
+          ? comments.filter((comment) => Number(comment.id) > after)
+          : comments.slice(-50);
+        const result = unread.slice(0, 50);
+        return {
+          data: result,
+          next_cursor: result.at(-1)?.id ?? String(after),
+          has_more: unread.length > 50,
+        };
+      }
+      if (live.status !== "start") throw new Error("Phiên live đã kết thúc.");
+      const content = body.content.trim();
+      if (!content || [...content].length > 300)
+        throw new Error("Nhập bình luận từ 1 đến 300 ký tự.");
+      const comment = {
+        id: String(comments.length + 1),
+        username: demoUser.username,
+        content,
+        created_at: new Date().toISOString(),
+      };
+      comments.push(comment);
+      store(state);
+      return comment;
+    }
     const items = allocations[key] ?? [];
     if (method === "GET")
       return page(

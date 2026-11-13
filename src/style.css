@@ -1390,3 +1390,72 @@ dialog::backdrop {
   top: 10px;
   left: 10px;
 }
+
+.room-sidebar {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+.live-comments {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  padding: 15px;
+}
+.live-comments h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 17px;
+}
+.live-comments h2 svg {
+  color: var(--purple);
+}
+.comment-feed {
+  height: clamp(145px, 23vh, 240px);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  padding: 3px 4px;
+}
+.comment-feed > p,
+.comment-closed {
+  color: var(--muted);
+  font-size: 13px;
+}
+.live-comment {
+  background: #f8f7fc;
+  padding: 7px 9px;
+  border-radius: 9px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+.live-comment > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+.live-comment time {
+  color: var(--muted);
+  font-size: 11px;
+}
+.live-comment p {
+  white-space: pre-wrap;
+}
+.comment-form {
+  display: flex;
+  gap: 7px;
+}
+.comment-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  background: #f9f8fc;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}

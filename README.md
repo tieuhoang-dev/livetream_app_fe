@@ -41,7 +41,7 @@ Bản build không có `VITE_PUBLIC_API_URL` mở ở chế độ mẫu. Chọn 
 
 **Dừng phát** tắt camera và micro, giữ phiên bán hàng mở để phát lại. **Kết thúc phiên** đóng phiên và yêu cầu LiveKit ngắt người xem. Để phát từ điện thoại, mở frontend qua HTTPS và dùng một endpoint LiveKit WSS mà điện thoại có thể truy cập. `ws://127.0.0.1:7880` dùng cho thử nghiệm trên cùng máy. Chế độ dữ liệu mẫu chỉ mô phỏng phòng và sản phẩm.
 
-Chat phòng và thanh toán qua cổng cần thêm tích hợp backend.
+Chủ phiên có thể bấm **Thêm hàng** ngay trong phòng để chọn sản phẩm từ kho, giá bán và số lượng dành cho live. Người xem đăng nhập để đọc và gửi bình luận trong cùng phiên. Danh sách hàng và bình luận tự cập nhật.
 
 ## Đưa repo lên GitHub
 
