@@ -401,6 +401,7 @@ export function LiveRoom({
   showProduct,
   navigate,
   mode,
+  session,
   activeUser,
   withAccount,
   notice,
@@ -463,8 +464,11 @@ export function LiveRoom({
                 )}
               </div>
               <LiveComments
+                key={`${mode}:${activeUser?.user_id || "guest"}`}
                 api={api}
                 live={live.data}
+                mode={mode}
+                token={session?.token}
                 activeUser={activeUser}
                 withAccount={withAccount}
                 onEnded={reload}
