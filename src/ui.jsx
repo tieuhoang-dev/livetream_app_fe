@@ -28,6 +28,18 @@ export const statuses = {
   refunded: "Đã hoàn",
 };
 export const orderOptions = Object.entries(statuses);
+export const paymentMethods = [
+  ["cod", "Thanh toán khi nhận hàng (COD)"],
+  ["bank_transfer", "Chuyển khoản ngân hàng"],
+];
+export function paymentMethodName(method) {
+  if (method === "manual") return "Theo thỏa thuận";
+  return (
+    paymentMethods.find(([value]) => value === method)?.[1] ||
+    method ||
+    "Chưa chọn"
+  );
+}
 
 export function Picture({ src, alt = "", fallback: Icon = Package }) {
   const [failed, setFailed] = useState(false);

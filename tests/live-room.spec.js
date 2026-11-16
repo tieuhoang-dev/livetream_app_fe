@@ -108,12 +108,13 @@ test.describe("phone", () => {
     expect(errors).toEqual([]);
   });
 
-  test("shopping drawer hands off to checkout and creates a demo order", async ({
+  test("shopping checkout records payment and keeps the viewer in the live", async ({
     page,
   }) => {
     const errors = collectErrors(page);
     await demo(page);
     await page.goto("/#live/coffee");
+    const player = await page.locator(".live-video").elementHandle();
     await page.getByRole("button", { name: /Mở giỏ sản phẩm/ }).click();
     const drawer = page.getByRole("dialog", { name: /Giỏ hàng LIVE/ });
     await expect(drawer).toBeVisible();
@@ -125,11 +126,18 @@ test.describe("phone", () => {
     });
     await expect(checkout).toBeVisible();
     await checkout.getByLabel("Số lượng").fill("2");
+    await checkout.getByLabel("Phương thức thanh toán").selectOption("bank_transfer");
     await checkout.getByRole("button", { name: "Xác nhận đặt hàng" }).click();
-    await expect(page).toHaveURL(/#orders$/);
+    await expect(page).toHaveURL(/#live\/coffee$/);
+    await expect(checkout).not.toBeVisible();
+    expect(await player.evaluate((element) => element.isConnected)).toBe(true);
     await expect(
       page.getByText("Đã tạo đơn hàng.", { exact: true }),
     ).toBeVisible();
+    await page.getByRole("button", { name: "Rời phòng live", exact: true }).click();
+    await page.getByRole("button", { name: "Đơn hàng", exact: true }).first().click();
+    const detail = page.getByRole("dialog", { name: "Chi tiết đơn hàng" });
+    await expect(detail.getByText("Chuyển khoản ngân hàng", { exact: true })).toBeVisible();
     expect(errors).toEqual([]);
   });
 
@@ -157,8 +165,9 @@ test.describe("phone", () => {
 const roomID = "11111111-1111-4111-8111-111111111111";
 const sellerID = "22222222-2222-4222-8222-222222222222";
 const productID = "33333333-3333-4333-8333-333333333333";
+const buyerID = "44444444-4444-4444-8444-444444444444";
 
-async function mockAPI(page, owner = false) {
+async function mockAPI(page, owner = false, signedIn = owner) {
   const writes = [];
   const room = {
     id: roomID,
@@ -178,8 +187,8 @@ async function mockAPI(page, owner = false) {
     is_pinned: true,
   };
   const profile = {
-    user_id: sellerID,
-    username: "Chủ shop",
+    user_id: owner ? sellerID : buyerID,
+    username: owner ? "Chủ shop" : "Người mua",
     exp: Math.floor(Date.now() / 1000) + 3600,
   };
   const token =
@@ -187,11 +196,11 @@ async function mockAPI(page, owner = false) {
     Buffer.from(JSON.stringify(profile)).toString("base64url") +
     ".fixture";
   await page.addInitScript(
-    ({ token, owner }) => {
+    ({ token, signedIn }) => {
       sessionStorage.setItem("livemart-mode", "api");
-      if (owner) sessionStorage.setItem("livemart-token", token);
+      if (signedIn) sessionStorage.setItem("livemart-token", token);
     },
-    { token, owner },
+    { token, signedIn },
   );
   await page.route("**/api/**", async (route) => {
     const request = route.request(),
@@ -209,6 +218,11 @@ async function mockAPI(page, owner = false) {
     if (path.endsWith("/media-token")) {
       status = 503;
       payload = { error: "live_media_unavailable" };
+    } else if (path === "/api/orders" && request.method() === "POST") {
+      const input = request.postDataJSON();
+      item.stock_quantity -= input.quantity;
+      status = 201;
+      payload = { order_id: "55555555-5555-4555-8555-555555555555", status: "pending", total_amount: input.quantity * item.discount_price };
     } else if (path.endsWith("/comments"))
       payload = { data: [], next_cursor: "0", has_more: false };
     else if (path === `/api/livestreams/${roomID}`) payload = room;
@@ -247,6 +261,62 @@ async function mockAPI(page, owner = false) {
   });
   return writes;
 }
+
+test("catalog checkout still opens the new order and shows the COD method", async ({ page }) => {
+  await demo(page);
+  await page.goto("/#shop");
+  await page.getByRole("button", { name: "Mua Tai nghe chụp tai không dây", exact: true }).click();
+  const checkout = page.getByRole("dialog", { name: "Đặt hàng", exact: true });
+  await expect(checkout.getByLabel("Phương thức thanh toán")).toHaveValue("cod");
+  await checkout.getByRole("button", { name: "Xác nhận đặt hàng" }).click();
+  await expect(page).toHaveURL(/#orders$/);
+  const detail = page.getByRole("dialog", { name: "Chi tiết đơn hàng" });
+  await expect(detail.getByText("Thanh toán khi nhận hàng (COD)", { exact: true })).toBeVisible();
+});
+
+for (const [method, viewport] of [
+  ["cod", { width: 1440, height: 1000 }],
+  ["bank_transfer", { width: 390, height: 844 }],
+]) {
+  test(`API live checkout sends ${method} and preserves the video element`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    const errors = collectErrors(page);
+    const writes = await mockAPI(page, false, true);
+    await page.goto(`/#live/${roomID}`);
+    const player = await page.locator(".live-video").elementHandle();
+    if (viewport.width < 900) await page.getByRole("button", { name: /Mở giỏ sản phẩm/ }).click();
+    await page.getByRole("button", { name: "Chọn mua", exact: true }).click();
+    const checkout = page.getByRole("dialog", { name: "Đặt hàng", exact: true });
+    await checkout.getByLabel("Số lượng").fill("2");
+    await checkout.getByLabel("Phương thức thanh toán").selectOption(method);
+    await checkout.getByRole("button", { name: "Xác nhận đặt hàng" }).click();
+    await expect(checkout).not.toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`#live/${roomID}$`));
+    expect(await player.evaluate((element) => element.isConnected)).toBe(true);
+    const orders = writes.filter((entry) => entry.path === "/api/orders");
+    expect(orders).toHaveLength(1);
+    expect(orders[0].body).toEqual({ product_id: productID, livestream_id: roomID, quantity: 2, payment_method: method });
+    expect(orders[0].authorization).toContain("Bearer ui-fixture.");
+    if (viewport.width < 900) await page.getByRole("button", { name: /Mở giỏ sản phẩm/ }).click();
+    await expect(page.getByText("Còn 3 sản phẩm", { exact: true })).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+}
+
+test("failed live order keeps the chosen payment, quantity and room", async ({ page }) => {
+  await mockAPI(page, false, true);
+  await page.route("**/api/orders", (route) => route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "insufficient_stock" }) }));
+  await page.goto(`/#live/${roomID}`);
+  await page.getByRole("button", { name: "Chọn mua", exact: true }).click();
+  const checkout = page.getByRole("dialog", { name: "Đặt hàng", exact: true });
+  await checkout.getByLabel("Số lượng").fill("2");
+  await checkout.getByLabel("Phương thức thanh toán").selectOption("bank_transfer");
+  await checkout.getByRole("button", { name: "Xác nhận đặt hàng" }).click();
+  await expect(checkout.getByRole("alert")).toHaveText("Số lượng còn trong kho không đủ.");
+  await expect(checkout.getByLabel("Phương thức thanh toán")).toHaveValue("bank_transfer");
+  await expect(checkout.getByLabel("Số lượng")).toHaveValue("2");
+  await expect(page).toHaveURL(new RegExp(`#live/${roomID}$`));
+});
 
 test("API owner can add inventory and media errors retain the live interface", async ({
   page,

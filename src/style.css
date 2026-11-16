@@ -1009,6 +1009,20 @@ dialog::backdrop {
   font-size: 13px;
   color: var(--muted);
 }
+.payment-note,
+.payment-summary {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.payment-summary {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 12px;
+}
+.payment-summary strong {
+  color: var(--ink);
+}
 .mini-photo {
   width: 56px;
   height: 56px;

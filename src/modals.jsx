@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ArrowRight, LockKeyhole, ShoppingBag } from "lucide-react";
 import { request } from "./api";
-import { Modal, money, Picture } from "./ui";
+import { Modal, money, paymentMethods, Picture } from "./ui";
 
 const authActions = {
   login: ["Đăng nhập", "/api/users/login"],
@@ -207,11 +207,13 @@ export function ProductModal({ product, live, close, onBuy, isOwnProduct }) {
 
 export function CheckoutModal({ api, product, live, close, onOrder }) {
   const [quantity, setQuantity] = useState("1");
+  const [paymentMethod, setPaymentMethod] = useState("cod");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const unitPrice = live ? product.discount_price : product.price;
   async function submit(event) {
     event.preventDefault();
+    if (pending) return;
     setPending(true);
     setError("");
     try {
@@ -220,7 +222,7 @@ export function CheckoutModal({ api, product, live, close, onOrder }) {
         body: {
           product_id: live ? product.product_id : product.id,
           quantity: Number(quantity),
-          payment_method: "manual",
+          payment_method: paymentMethod,
           ...(live ? { livestream_id: live.id } : {}),
         },
       });
@@ -252,9 +254,31 @@ export function CheckoutModal({ api, product, live, close, onOrder }) {
             step="1"
             value={quantity}
             onChange={(event) => setQuantity(event.target.value)}
+            disabled={pending}
             required
           />
         </label>
+        <label>
+          Phương thức thanh toán
+          <select
+            value={paymentMethod}
+            onChange={(event) => setPaymentMethod(event.target.value)}
+            disabled={pending}
+            aria-describedby="checkout-payment-note"
+            required
+          >
+            {paymentMethods.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="payment-note" id="checkout-payment-note">
+          {paymentMethod === "bank_transfer"
+            ? "Liên hệ người bán để nhận thông tin chuyển khoản cho đơn hàng."
+            : "Thanh toán khi bạn nhận được hàng."}
+        </p>
         <div className="checkout-total">
           <span>Tổng tiền</span>
           <strong>{money(unitPrice * Number(quantity))}</strong>

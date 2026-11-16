@@ -34,6 +34,7 @@ import {
   Modal,
   money,
   orderOptions,
+  paymentMethodName,
   Pagination,
   Picture,
   ProductCard,
@@ -1111,6 +1112,10 @@ function OrderDetail({ api, path, refresh, reload, close, seller, notice }) {
               <span>Tổng tiền</span>
               <strong>{money(order.total_amount)}</strong>
             </div>
+            <p className="payment-summary">
+              <span>Phương thức thanh toán</span>
+              <strong>{paymentMethodName(order.payment?.payment_method)}</strong>
+            </p>
             {order.refund_reason && (
               <p>Lý do hoàn đơn: {order.refund_reason}</p>
             )}

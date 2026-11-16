@@ -350,7 +350,7 @@ function App() {
             close();
             reload();
             setSelectedOrder(id);
-            navigate("orders");
+            if (!modal.live) navigate("orders");
             setNotice("Đã tạo đơn hàng.");
           }}
         />
