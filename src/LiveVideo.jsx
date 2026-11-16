@@ -27,7 +27,15 @@ function mediaError(error) {
   }
 }
 
-export function LiveVideo({ api, live, mode, isOwner, withAccount, onEnded }) {
+export function LiveVideo({
+  api,
+  live,
+  mode,
+  isOwner,
+  withAccount,
+  onEnded,
+  children,
+}) {
   const connection = useRef(null);
   const video = useRef(null);
   const audio = useRef(null);
@@ -298,11 +306,14 @@ export function LiveVideo({ api, live, mode, isOwner, withAccount, onEnded }) {
           </span>
         )}
         {(!media.video || ended || phase === "reconnecting") && (
-          <div className="room-overlay">
+          <div
+            className={`room-overlay ${mode === "demo" && !ended ? "demo-video-overlay" : ""}`}
+          >
             <Video size={32} />
             <span role="status">{message}</span>
           </div>
         )}
+        {children}
       </div>
       {!ended && mode === "api" && (
         <div className="media-controls">

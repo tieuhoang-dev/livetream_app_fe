@@ -1,6 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
+  ArrowUpRight,
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  Copy,
+  Expand,
+  Heart,
+  MessageCircle,
+  Pin,
+  Share2,
+  ShieldCheck,
+  X,
   CirclePlay,
   ClipboardList,
   LayoutGrid,
@@ -407,6 +419,27 @@ export function LiveRoom({
 }) {
   const [page, setPage] = useState(1);
   const [inventoryOpen, setInventoryOpen] = useState(false);
+  const [shopOpen, setShopOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [commentsVisible, setCommentsVisible] = useState(true);
+  const [hearts, setHearts] = useState([]);
+  const stage = useRef(null);
+  const shopPanel = useRef(null);
+  const touch = useRef(null);
+  const heartSequence = useRef(0);
+  const shareInput = useRef(null);
+  const [mobile, setMobile] = useState(
+    () => matchMedia("(max-width: 900px)").matches,
+  );
+  useEffect(() => {
+    const media = matchMedia("(max-width: 900px)");
+    const update = () => {
+      setMobile(media.matches);
+      setShopOpen(false);
+    };
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
   const live = useData(
     mode === "api" ? request : api,
     `/api/livestreams/${id}`,
@@ -424,97 +457,461 @@ export function LiveRoom({
     true,
     mode === "api" && roomOpen ? 5000 : 0,
   );
+  const feed = useData(
+    api,
+    "/api/livestreams",
+    { status: "start", page_size: 20 },
+    refresh,
+  );
+  const rooms = feed.data?.data || [];
+  const position = rooms.findIndex((room) => room.id === id);
+  const previous = position > 0 ? rooms[position - 1] : null;
+  const next = position >= 0 ? rooms[position + 1] : rooms[0];
   const isOwner = activeUser?.user_id === live.data?.seller_id;
-  return (
-    <>
-      <Back onClick={() => navigate("live")}>Danh sách live</Back>
-      {live.data ? (
-        <>
-          <div className="room-layout">
-            <LiveVideo
-              api={api}
-              live={live.data}
-              mode={mode}
-              isOwner={isOwner}
-              withAccount={withAccount}
-              onEnded={(message) => {
-                if (message) notice(message);
-                reload();
-              }}
-            />
-            <div className="room-sidebar">
-              <div className="room-details">
-                <span
-                  className={`live-badge ${live.data.status === "end" ? "ended" : ""}`}
+  const products = items.data?.data || [];
+  const pinned = products.find((item) => item.is_pinned) || products[0];
+  const total = items.data?.total ?? products.length;
+
+  useEffect(() => {
+    const onKey = (event) => {
+      if (
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        event.target.closest(
+          "input, textarea, select, [contenteditable=true]",
+        ) ||
+        document.querySelector("dialog[open]")
+      )
+        return;
+      const destination =
+        event.key === "ArrowDown"
+          ? next
+          : event.key === "ArrowUp"
+            ? previous
+            : null;
+      if (destination) {
+        event.preventDefault();
+        navigate("live", destination.id);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [next?.id, previous?.id, navigate]);
+
+  function openShop() {
+    if (mobile) setShopOpen(true);
+    else shopPanel.current?.focus({ preventScroll: true });
+  }
+  function openProduct(product) {
+    setShopOpen(false);
+    showProduct(product, live.data);
+  }
+  function order(product) {
+    setShopOpen(false);
+    buy(product, live.data);
+  }
+  function manage() {
+    setShopOpen(false);
+    setInventoryOpen(true);
+  }
+  function react() {
+    const key = ++heartSequence.current;
+    setHearts((current) => [
+      ...current.slice(-7),
+      { key, offset: (key * 23) % 44 },
+    ]);
+  }
+  async function fullscreen() {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else if (stage.current.requestFullscreen)
+        await stage.current.requestFullscreen();
+      else notice("Trình duyệt này chưa hỗ trợ xem toàn màn hình.");
+    } catch {
+      notice("Không mở được toàn màn hình. Bạn có thể thử lại.");
+    }
+  }
+  async function copyShare() {
+    try {
+      await navigator.clipboard.writeText(location.href);
+      notice("Đã sao chép liên kết phòng live.");
+      setShareOpen(false);
+    } catch {
+      shareInput.current?.select();
+      notice("Liên kết đã được chọn. Bạn có thể sao chép để chia sẻ.");
+    }
+  }
+  function productList() {
+    return (
+      <>
+        <div className="live-shop-intro">
+          <span>
+            <ShieldCheck size={15} /> Xem trực tiếp, chọn đúng món
+          </span>
+          <p>Sản phẩm và mức giá của phiên live này.</p>
+        </div>
+        {isOwner && roomOpen && (
+          <button className="button primary live-add-product" onClick={manage}>
+            <Plus size={17} /> Thêm sản phẩm vào live
+          </button>
+        )}
+        <State
+          {...items}
+          empty={
+            !products.length && "Người bán chưa thêm sản phẩm vào phiên này."
+          }
+          retry={reload}
+        >
+          <div className="live-product-list">
+            {products.map((product, index) => (
+              <article className="live-product-row" key={product.id}>
+                <button
+                  className="live-product-photo"
+                  onClick={() => openProduct(product)}
+                  aria-label={`Xem ${product.name}`}
                 >
-                  {live.data.status === "start" && <i />}
-                  {live.data.status === "start" ? "Đang mở" : "Đã kết thúc"}
-                </span>
-                <h1>{live.data.title}</h1>
-                <p>{live.data.seller_username || "Người bán"}</p>
-                <span>Bắt đầu lúc {date(live.data.started_at)}</span>
-                {isOwner && roomOpen && (
+                  <Picture src={product.image_url} />
+                  <span>{(page - 1) * pageSize + index + 1}</span>
+                </button>
+                <div className="live-product-content">
+                  {product.is_pinned && (
+                    <span className="live-pin">
+                      <Pin size={11} /> Người bán đang giới thiệu
+                    </span>
+                  )}
                   <button
-                    className="button secondary"
-                    onClick={() => setInventoryOpen(true)}
+                    className="live-product-name"
+                    onClick={() => openProduct(product)}
                   >
-                    <Plus size={18} /> Thêm hàng
+                    {product.name}
                   </button>
-                )}
+                  <span className="live-product-stock">
+                    {product.stock_quantity > 0
+                      ? `Còn ${product.stock_quantity} sản phẩm`
+                      : "Tạm hết hàng"}
+                  </span>
+                  <div className="live-product-price">
+                    <strong>{money(product.discount_price)}</strong>
+                    {product.original_price > product.discount_price && (
+                      <del>{money(product.original_price)}</del>
+                    )}
+                  </div>
+                  <button
+                    className="button primary live-buy"
+                    disabled={
+                      !isOwner && (!roomOpen || product.stock_quantity <= 0)
+                    }
+                    onClick={() =>
+                      isOwner ? openProduct(product) : order(product)
+                    }
+                  >
+                    {isOwner
+                      ? "Xem sản phẩm"
+                      : !roomOpen
+                        ? "Live đã kết thúc"
+                        : product.stock_quantity <= 0
+                          ? "Hết hàng"
+                          : "Chọn mua"}
+                    <ArrowUpRight size={14} />
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+          <Pagination result={items.data} onChange={setPage} />
+        </State>
+        <div className="live-shop-footer">
+          <ShoppingBag size={17} />
+          <p>
+            Thích món nào, chọn ngay món đó.
+            <br />
+            <span>Đơn hàng được lưu trong mục Đơn hàng.</span>
+          </p>
+        </div>
+      </>
+    );
+  }
+  if (!live.data)
+    return (
+      <>
+        <Back onClick={() => navigate("live")}>Danh sách live</Back>
+        <State {...live} retry={reload} />
+      </>
+    );
+  const room = live.data;
+  const host = room.seller_username || "Người bán";
+  return (
+    <div className="live-experience">
+      <div className="live-room-topline">
+        <Back onClick={() => navigate("live")}>Khám phá LIVE</Back>
+        <span>
+          <span className="tiny-live-dot" />
+          {mode === "demo"
+            ? "Phòng mẫu"
+            : roomOpen
+              ? "Bạn đang trong phòng live"
+              : "Phiên đã kết thúc"}
+        </span>
+        <button className="live-top-share" onClick={() => setShareOpen(true)}>
+          <Share2 size={15} /> Chia sẻ
+        </button>
+      </div>
+      <div className="live-room-layout">
+        <section
+          className="live-stage"
+          ref={stage}
+          aria-label="Phòng livestream"
+          onTouchStart={(event) => {
+            touch.current = event.target.closest(
+              "button, input, a, form, .live-comments, .media-controls",
+            )
+              ? null
+              : { x: event.touches[0].clientX, y: event.touches[0].clientY };
+          }}
+          onTouchEnd={(event) => {
+            const start = touch.current;
+            touch.current = null;
+            if (!start) return;
+            const dy = event.changedTouches[0].clientY - start.y,
+              dx = event.changedTouches[0].clientX - start.x;
+            if (Math.abs(dy) > 90 && Math.abs(dy) > Math.abs(dx) * 1.4) {
+              const destination = dy < 0 ? next : previous;
+              if (destination) navigate("live", destination.id);
+            }
+          }}
+        >
+          <div className="stage-ambience" aria-hidden="true">
+            <Picture src={room.image} />
+          </div>
+          <LiveVideo
+            api={api}
+            live={room}
+            mode={mode}
+            isOwner={isOwner}
+            withAccount={withAccount}
+            onEnded={(message) => {
+              if (message) notice(message);
+              reload();
+            }}
+          >
+            <div className="live-stage-top">
+              <div className="live-host-pill">
+                <span className="live-host-avatar">
+                  {room.seller_avatar ? (
+                    <Picture src={room.seller_avatar} />
+                  ) : (
+                    Array.from(host)[0].toUpperCase()
+                  )}
+                </span>
+                <div>
+                  <strong>{host}</strong>
+                  <span>{room.category || "Cùng khám phá hôm nay"}</span>
+                </div>
+                <span className={`stage-live-badge ${roomOpen ? "" : "ended"}`}>
+                  {!roomOpen ? "ĐÃ KẾT THÚC" : mode === "demo" ? "MẪU" : "LIVE"}
+                </span>
               </div>
+              <button
+                className="live-close"
+                onClick={() => navigate("live")}
+                aria-label="Rời phòng live"
+              >
+                <X size={21} />
+              </button>
+            </div>
+            <div className="live-stage-title">
+              <span>{room.category || "LIVE SHOPPING"}</span>
+              <h1>{room.title}</h1>
+            </div>
+            <div className="live-reaction-trail" aria-hidden="true">
+              {hearts.map((heart) => (
+                <Heart
+                  key={heart.key}
+                  style={{ "--heart-offset": `${heart.offset}px` }}
+                  onAnimationEnd={() =>
+                    setHearts((current) =>
+                      current.filter((item) => item.key !== heart.key),
+                    )
+                  }
+                />
+              ))}
+            </div>
+            <div className="live-action-rail">
+              <button
+                onClick={react}
+                aria-label="Thả tim"
+                className="live-action-heart"
+              >
+                <span>
+                  <Heart size={27} />
+                </span>
+                <small>Thả tim</small>
+              </button>
+              <button
+                onClick={() => setCommentsVisible((visible) => !visible)}
+                aria-label={commentsVisible ? "Ẩn bình luận" : "Hiện bình luận"}
+                aria-pressed={commentsVisible}
+              >
+                <span>
+                  <MessageCircle size={26} />
+                </span>
+                <small>Bình luận</small>
+              </button>
+              <button
+                onClick={() => setShareOpen(true)}
+                aria-label="Chia sẻ phòng live"
+              >
+                <span>
+                  <Share2 size={25} />
+                </span>
+                <small>Chia sẻ</small>
+              </button>
+              <button
+                className="live-shop-action"
+                onClick={openShop}
+                aria-label={`Mở giỏ sản phẩm, ${total} sản phẩm`}
+              >
+                <span>
+                  <ShoppingBag size={26} />
+                  <b>{total}</b>
+                </span>
+                <small>Giỏ hàng</small>
+              </button>
+              <button
+                onClick={fullscreen}
+                aria-label="Toàn màn hình"
+                className="fullscreen-action"
+              >
+                <span>
+                  <Expand size={22} />
+                </span>
+                <small>Mở rộng</small>
+              </button>
+            </div>
+            <div className="live-stage-bottom">
+              {pinned && (
+                <button
+                  className="live-pinned-product"
+                  onClick={() => openProduct(pinned)}
+                  aria-label={`Xem sản phẩm đang ghim: ${pinned.name}`}
+                >
+                  <span className="pinned-photo">
+                    <Picture src={pinned.image_url} />
+                  </span>
+                  <span className="pinned-content">
+                    <span>
+                      <Pin size={10} />{" "}
+                      {pinned.is_pinned
+                        ? "SẢN PHẨM ĐANG GHIM"
+                        : "SẢN PHẨM TRONG LIVE"}
+                    </span>
+                    <strong>{pinned.name}</strong>
+                    <b>{money(pinned.discount_price)}</b>
+                  </span>
+                  <ChevronRight size={17} />
+                </button>
+              )}
               <LiveComments
                 api={api}
-                live={live.data}
+                live={room}
                 activeUser={activeUser}
                 withAccount={withAccount}
                 onEnded={reload}
+                visible={commentsVisible}
               />
             </div>
-          </div>
-          <section className="content-section">
-            <SectionTitle icon={ShoppingBag} title="Sản phẩm trong phiên" />
-            <State
-              {...items}
-              empty={!items.data?.data.length && "Phiên này chưa có sản phẩm."}
-              retry={reload}
-            >
-              <div className="card-grid">
-                {items.data?.data.map((p) => (
-                  <ProductCard
-                    key={p.id}
-                    product={p}
-                    live
-                    onOpen={() => showProduct(p, live.data)}
-                    onBuy={
-                      live.data.status === "start"
-                        ? () => buy(p, live.data)
-                        : undefined
-                    }
-                  />
-                ))}
+            <div className="live-video-vignette" aria-hidden="true" />
+          </LiveVideo>
+        </section>
+        <div className="live-room-stepper" aria-label="Chuyển phòng live">
+          <button
+            aria-label="Live trước"
+            disabled={!previous}
+            onClick={() => navigate("live", previous.id)}
+            title="Live trước (↑)"
+          >
+            <ChevronUp size={23} />
+          </button>
+          <button
+            aria-label="Live tiếp theo"
+            disabled={!next}
+            onClick={() => navigate("live", next.id)}
+            title="Live tiếp theo (↓)"
+          >
+            <ChevronDown size={23} />
+          </button>
+          <span>LIVE</span>
+        </div>
+        {!mobile && (
+          <aside
+            ref={shopPanel}
+            tabIndex={-1}
+            className="live-shop-panel"
+            aria-label="Sản phẩm trong live"
+          >
+            <div className="live-shop-heading">
+              <div>
+                <ShoppingBag size={18} />
+                <h2>Giỏ hàng LIVE</h2>
+                <span>{total}</span>
               </div>
-              <Pagination result={items.data} onChange={setPage} />
-            </State>
-          </section>
-          {inventoryOpen && isOwner && (
-            <LiveInventory
-              api={api}
-              live={live.data}
-              activeUser={activeUser}
-              refresh={refresh}
-              reload={() => {
-                setPage(1);
-                reload();
-              }}
-              notice={notice}
-              close={() => setInventoryOpen(false)}
-            />
-          )}
-        </>
-      ) : (
-        <State {...live} retry={reload} />
+              <span className={`live-shop-active ${roomOpen ? "" : "ended"}`}>
+                <i />
+                {roomOpen ? "Đang mở" : "Đã kết thúc"}
+              </span>
+            </div>
+            {productList()}
+          </aside>
+        )}
+      </div>
+      {shopOpen && mobile && (
+        <Modal
+          title={`Giỏ hàng LIVE · ${total} sản phẩm`}
+          className="live-shop-drawer"
+          close={() => setShopOpen(false)}
+        >
+          {productList()}
+        </Modal>
       )}
-    </>
+
+      {shareOpen && (
+        <Modal
+          title="Chia sẻ phòng live"
+          close={() => setShareOpen(false)}
+          className="live-share-modal"
+        >
+          <p>Cùng bạn bè khám phá {host}.</p>
+          <label className="share-link-label">
+            Liên kết phòng
+            <input
+              ref={shareInput}
+              readOnly
+              value={location.href}
+              onFocus={(event) => event.target.select()}
+            />
+          </label>
+          <button className="button primary wide" onClick={copyShare}>
+            <Copy size={17} /> Sao chép liên kết
+          </button>
+        </Modal>
+      )}
+      {inventoryOpen && isOwner && (
+        <LiveInventory
+          api={api}
+          live={room}
+          activeUser={activeUser}
+          refresh={refresh}
+          reload={() => {
+            setPage(1);
+            reload();
+          }}
+          notice={notice}
+          close={() => setInventoryOpen(false)}
+        />
+      )}
+    </div>
   );
 }
 

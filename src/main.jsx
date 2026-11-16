@@ -18,9 +18,10 @@ import { AuthModal, CheckoutModal, ProductModal } from "./modals";
 import { Catalog, Discover, LiveRoom, Orders, Seller } from "./views";
 import { SearchBox } from "./ui";
 import "./style.css";
+import "./tiktok.css";
 
 const links = [
-  ["home", "Trang chủ", House],
+  ["home", "Khám phá", House],
   ["live", "Livestream", Radio],
   ["shop", "Cửa hàng", LayoutGrid],
   ["orders", "Đơn hàng", ShoppingBag],
@@ -143,8 +144,10 @@ function App() {
     demo: () => changeMode("demo"),
   };
 
+  const inLiveRoom = current.view === "live" && Boolean(current.id);
+
   return (
-    <>
+    <div className={`app-shell ${inLiveRoom ? "is-live-room" : ""}`}>
       <a
         className="skip"
         href="#main-content"
@@ -220,6 +223,7 @@ function App() {
       </header>
       <nav className="desktop-nav" aria-label="Điều hướng chính">
         <div className="container nav-inner">
+          <div className="nav-caption">KHÔNG GIAN CỦA BẠN</div>
           <div className="nav-links">
             {links.map(([key, label, Icon]) => (
               <button
@@ -239,6 +243,14 @@ function App() {
           >
             <Store size={17} /> Kênh người bán <ArrowRight size={15} />
           </button>
+          <div className="nav-footnote">
+            <span>LiveMart LIVE</span>
+            <p>
+              Gặp gỡ. Khám phá.
+              <br />
+              Chọn điều bạn thích.
+            </p>
+          </div>
         </div>
       </nav>
       <main id="main-content" className="container main-content" tabIndex={-1}>
@@ -343,7 +355,7 @@ function App() {
           }}
         />
       )}
-    </>
+    </div>
   );
 }
 

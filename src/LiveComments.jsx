@@ -11,7 +11,14 @@ function appendComments(previous, incoming) {
     .slice(-100);
 }
 
-export function LiveComments({ api, live, activeUser, withAccount, onEnded }) {
+export function LiveComments({
+  api,
+  live,
+  activeUser,
+  withAccount,
+  onEnded,
+  visible = true,
+}) {
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [readError, setReadError] = useState("");
@@ -90,7 +97,10 @@ export function LiveComments({ api, live, activeUser, withAccount, onEnded }) {
   }
 
   return (
-    <section className="live-comments" aria-label="Bình luận trong live">
+    <section
+      className={`live-comments ${visible ? "" : "comments-hidden"}`}
+      aria-label="Bình luận trong live"
+    >
       <h2>
         <MessageCircle size={19} /> Bình luận
       </h2>
@@ -112,17 +122,26 @@ export function LiveComments({ api, live, activeUser, withAccount, onEnded }) {
           >
             {loading && !comments.length && <p>Đang tải bình luận…</p>}
             {!loading && !comments.length && !readError && (
-              <p>Chưa có bình luận.</p>
+              <p className="comment-welcome">
+                Chào mừng bạn đến với phòng live.
+                <br />
+                Bắt đầu câu chuyện bằng một lời chào nhé!
+              </p>
             )}
             {comments.map((comment) => (
               <div className="live-comment" key={comment.id}>
-                <div>
-                  <strong>{comment.username}</strong>
-                  <time dateTime={comment.created_at}>
-                    {timestamp.format(new Date(comment.created_at))}
-                  </time>
+                <span className="comment-avatar" aria-hidden="true">
+                  {Array.from(comment.username || "?")[0].toUpperCase()}
+                </span>
+                <div className="comment-message">
+                  <div>
+                    <strong>{comment.username}</strong>
+                    <time dateTime={comment.created_at}>
+                      {timestamp.format(new Date(comment.created_at))}
+                    </time>
+                  </div>
+                  <p>{comment.content}</p>
                 </div>
-                <p>{comment.content}</p>
               </div>
             ))}
           </div>

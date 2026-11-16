@@ -4,6 +4,7 @@ import {
   ArrowRight,
   ChevronLeft,
   ChevronRight,
+  Play,
   Package,
   Radio,
   Search,
@@ -76,7 +77,10 @@ export function LiveCard({ live, onOpen }) {
         <Picture src={live.image} fallback={Radio} />
         <span className={`live-badge ${live.status === "end" ? "ended" : ""}`}>
           {live.status === "start" && <i />}
-          {live.status === "start" ? "Đang mở" : "Đã kết thúc"}
+          {live.status === "start" ? "LIVE" : "ĐÃ KẾT THÚC"}
+        </span>
+        <span className="live-card-play" aria-hidden="true">
+          <Play size={26} fill="currentColor" />
         </span>
         {live.category && (
           <span className="card-category">{live.category}</span>
@@ -245,7 +249,7 @@ export function Pagination({ result, onChange }) {
   );
 }
 
-export function Modal({ title, close, children }) {
+export function Modal({ title, close, children, className = "" }) {
   const ref = useRef(null);
   useEffect(() => {
     const dialog = ref.current;
@@ -260,6 +264,7 @@ export function Modal({ title, close, children }) {
   return (
     <dialog
       ref={ref}
+      className={className}
       aria-label={title}
       onCancel={(event) => {
         event.preventDefault();

@@ -82,6 +82,37 @@ function freshData() {
     products: sampleProducts,
     lives: sampleLives,
     orders: [],
+    comments: Object.fromEntries(
+      sampleLives.map((live) => [
+        live.id,
+        [
+          {
+            id: "1",
+            username: "Minh Anh",
+            content: "Chào cả nhà, hôm nay có món gì mới không ạ? 👋",
+            created_at: timestamp(3),
+          },
+          {
+            id: "2",
+            username: "Thu Phương",
+            content: "Món đang ghim nhìn xinh quá!",
+            created_at: timestamp(2),
+          },
+          {
+            id: "3",
+            username: "Hoàng Nam",
+            content: "Shop giới thiệu kỹ hơn giúp mình với nhé.",
+            created_at: timestamp(1),
+          },
+          {
+            id: "4",
+            username: "Khánh Linh",
+            content: "Mình vừa vào, chào mọi người 🫶",
+            created_at: timestamp(0),
+          },
+        ],
+      ]),
+    ),
     allocations: Object.fromEntries(
       sampleProducts.map((p, i) => [
         sampleLives[i].id,
