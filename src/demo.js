@@ -351,6 +351,8 @@ export function demoRequest(
         query,
       );
     if (area === "orders" && !key) {
+      if (!body.delivery?.name || !body.delivery.phone || !body.delivery.ward || !body.delivery.address_line)
+        throw new Error("Điền đầy đủ thông tin nhận hàng.");
       const previous = orders.find((order) => body.request_id && order.request_id === body.request_id);
       if (previous) return { ...previous, order_id: previous.id };
       const quote = demoQuote(state, body);
@@ -471,8 +473,8 @@ export function demoLiveCommand(type, content) {
 
 
 function demoQuote(state, body) {
-  if (!body.delivery?.name || !body.delivery.phone || !body.delivery.province_code || !body.delivery.ward || !body.delivery.address_line)
-    throw new Error("Điền đầy đủ thông tin nhận hàng.");
+  if (!provinces.some((province) => province.code === body.delivery?.province_code))
+    throw new Error("Chọn tỉnh/thành nhận hàng để xem phí ship.");
   const product = get(state.products, body.product_id);
   const live = body.livestream_id ? get(state.lives, body.livestream_id) : null;
   if (live && live.status !== "start") throw new Error("Live đã kết thúc.");

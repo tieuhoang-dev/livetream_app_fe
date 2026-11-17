@@ -116,6 +116,19 @@ Dữ liệu mã/tên 34 tỉnh/thành trong `src/provinces.json` lấy từ
 https://provinces.open-api.vn/api/v2/p/ ngày 17/11/2026, đồng bộ với backend.
 Cần cập nhật backend chứa API quote/shipping-settings cùng phiên bản FE này.
 
+Nếu người mua gặp **Shop chưa thiết lập địa chỉ lấy hàng và phí giao hàng**,
+chủ live bấm **Cài đặt giao hàng** ngay trong phòng, xác nhận địa chỉ và nhập
+phí nội tỉnh/liên tỉnh rồi lưu. Không cần dừng video. Người mua bấm **Thử tính
+lại** để tiếp tục đơn đang điền. Lần đầu bắt đầu phát cũng có hai ô phí này;
+không tự gán phí mặc định, nhập 0 chỉ khi shop chủ động miễn phí.
+
+Phí được báo ngay khi chọn tỉnh/thành. Họ tên, số điện thoại và địa chỉ chi
+tiết vẫn phải đủ trước khi tạo đơn; sửa thông tin liên hệ không làm mất báo
+giá đang xem. Phường/xã có gợi ý theo tỉnh, dùng danh mục 3.321 phường/xã
+đóng gói trong `src/wards.json`, lấy từ provinces.open-api.vn API v2 ngày
+17/11/2026. Đổi tỉnh sẽ xóa phường/xã cũ. Có thể gõ địa chỉ không có trong gợi
+ý để xử lý dữ liệu bản đồ cũ. Bản đồ chỉ mở khi người dùng muốn kiểm tra ghim.
+
 ## Danh sách live qua WebSocket
 
 Trang khám phá, danh sách chuyển phòng và tab Phiên live của người bán dùng
