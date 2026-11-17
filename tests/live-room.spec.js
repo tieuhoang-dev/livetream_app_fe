@@ -6,6 +6,21 @@ async function demo(page) {
   );
 }
 
+const receiver = { name: "Người nhận thử", phone: "0901234567", province_code: "1", ward: "Phường thử", address_line: "12 Đường thử", latitude: null, longitude: null };
+async function fillDelivery(dialog, value = receiver) {
+  await dialog.getByLabel("Họ tên người nhận", { exact: true }).fill(value.name);
+  await dialog.getByLabel("Số điện thoại", { exact: true }).fill(value.phone);
+  await dialog.getByLabel("Tỉnh / Thành phố", { exact: true }).selectOption(value.province_code);
+  await dialog.getByLabel("Phường / Xã", { exact: true }).fill(value.ward);
+  await dialog.getByLabel("Địa chỉ cụ thể", { exact: true }).fill(value.address_line);
+}
+test.beforeEach(async ({ page }) => {
+  await page.route("https://tile.openstreetmap.org/**", (route) => route.fulfill({
+    contentType: "image/png",
+    body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j1ioAAAAASUVORK5CYII=", "base64"),
+  }));
+});
+
 function collectErrors(page) {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -127,6 +142,7 @@ test.describe("phone", () => {
     await expect(checkout).toBeVisible();
     await checkout.getByLabel("Số lượng").fill("2");
     await checkout.getByLabel("Phương thức thanh toán").selectOption("bank_transfer");
+    await fillDelivery(checkout);
     await checkout.getByRole("button", { name: "Xác nhận đặt hàng" }).click();
     await expect(page).toHaveURL(/#live\/coffee$/);
     await expect(checkout).not.toBeVisible();
@@ -215,7 +231,11 @@ async function mockAPI(page, owner = false, signedIn = owner) {
         body: request.postDataJSON(),
         authorization: request.headers().authorization,
       });
-    if (path.endsWith("/media-token")) {
+    if (path === "/api/orders/quote") {
+      const input = request.postDataJSON();
+      const fee = input.delivery.province_code === "1" ? 25000 : 40000;
+      payload = { unit_price: item.discount_price, quantity: input.quantity, items_subtotal: input.quantity * item.discount_price, shipping_fee: fee, total_amount: input.quantity * item.discount_price + fee, currency: "VND", shipping_zone: input.delivery.province_code === "1" ? "same_province" : "other_province", pickup_province: "Thành phố Hà Nội" };
+    } else if (path.endsWith("/media-token")) {
       status = 503;
       payload = { error: "live_media_unavailable" };
     } else if (path === "/api/orders" && request.method() === "POST") {
@@ -268,7 +288,8 @@ test("catalog checkout still opens the new order and shows the COD method", asyn
   await page.getByRole("button", { name: "Mua Tai nghe chụp tai không dây", exact: true }).click();
   const checkout = page.getByRole("dialog", { name: "Đặt hàng", exact: true });
   await expect(checkout.getByLabel("Phương thức thanh toán")).toHaveValue("cod");
-  await checkout.getByRole("button", { name: "Xác nhận đặt hàng" }).click();
+  await fillDelivery(checkout);
+    await checkout.getByRole("button", { name: "Xác nhận đặt hàng" }).click();
   await expect(page).toHaveURL(/#orders$/);
   const detail = page.getByRole("dialog", { name: "Chi tiết đơn hàng" });
   await expect(detail.getByText("Thanh toán khi nhận hàng (COD)", { exact: true })).toBeVisible();
@@ -289,13 +310,15 @@ for (const [method, viewport] of [
     const checkout = page.getByRole("dialog", { name: "Đặt hàng", exact: true });
     await checkout.getByLabel("Số lượng").fill("2");
     await checkout.getByLabel("Phương thức thanh toán").selectOption(method);
+    await fillDelivery(checkout);
     await checkout.getByRole("button", { name: "Xác nhận đặt hàng" }).click();
     await expect(checkout).not.toBeVisible();
     await expect(page).toHaveURL(new RegExp(`#live/${roomID}$`));
     expect(await player.evaluate((element) => element.isConnected)).toBe(true);
     const orders = writes.filter((entry) => entry.path === "/api/orders");
     expect(orders).toHaveLength(1);
-    expect(orders[0].body).toEqual({ product_id: productID, livestream_id: roomID, quantity: 2, payment_method: method });
+    expect(orders[0].body).toMatchObject({ product_id: productID, livestream_id: roomID, quantity: 2, payment_method: method, delivery: receiver, note: "", expected_total: 185000 });
+    expect(orders[0].body.request_id).toMatch(/^[0-9a-f-]{36}$/);
     expect(orders[0].authorization).toContain("Bearer ui-fixture.");
     if (viewport.width < 900) await page.getByRole("button", { name: /Mở giỏ sản phẩm/ }).click();
     await expect(page.getByText("Còn 3 sản phẩm", { exact: true })).toBeVisible();
@@ -311,7 +334,8 @@ test("failed live order keeps the chosen payment, quantity and room", async ({ p
   const checkout = page.getByRole("dialog", { name: "Đặt hàng", exact: true });
   await checkout.getByLabel("Số lượng").fill("2");
   await checkout.getByLabel("Phương thức thanh toán").selectOption("bank_transfer");
-  await checkout.getByRole("button", { name: "Xác nhận đặt hàng" }).click();
+  await fillDelivery(checkout);
+    await checkout.getByRole("button", { name: "Xác nhận đặt hàng" }).click();
   await expect(checkout.getByRole("alert")).toHaveText("Số lượng còn trong kho không đủ.");
   await expect(checkout.getByLabel("Phương thức thanh toán")).toHaveValue("bank_transfer");
   await expect(checkout.getByLabel("Số lượng")).toHaveValue("2");
@@ -402,4 +426,100 @@ test("ended live and all viewport sizes keep controls on screen", async ({
       )
       .toBe(true);
   }
+});
+
+test("seller saves pickup address, shipping fees and a GPS pin", async ({ page, context }) => {
+  const errors = collectErrors(page);
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation({ latitude: 21.028511, longitude: 105.804817 });
+  await demo(page);
+  await page.goto("/#seller");
+  await page.getByRole("button", { name: "Giao hàng", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Địa chỉ lấy hàng và phí giao hàng" })).toBeVisible();
+  await page.getByLabel("Người liên hệ", { exact: true }).fill("Chủ shop thử nghiệm");
+  await page.getByLabel("Phí ship nội tỉnh (VNĐ)", { exact: true }).fill("28000");
+  await page.getByLabel("Phí ship liên tỉnh (VNĐ)", { exact: true }).fill("45000");
+  await page.getByRole("button", { name: "Chọn vị trí trên bản đồ", exact: true }).click();
+  await page.getByRole("button", { name: "Dùng vị trí hiện tại", exact: true }).click();
+  await expect(page.getByText("Vị trí: 21.028511, 105.804817", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Lưu cấu hình giao hàng", exact: true }).click();
+  await expect(page.getByText("Đã lưu địa chỉ lấy hàng và phí vận chuyển.", { exact: true })).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: "Giao hàng", exact: true }).click();
+  await expect(page.getByLabel("Người liên hệ", { exact: true })).toHaveValue("Chủ shop thử nghiệm");
+  await expect(page.getByLabel("Phí ship nội tỉnh (VNĐ)", { exact: true })).toHaveValue("28000");
+  await page.getByRole("button", { name: "Chỉnh vị trí trên bản đồ", exact: true }).click();
+  await expect(page.getByText("Vị trí: 21.028511, 105.804817", { exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("GPS denial does not prevent a typed address and inter-province checkout", async ({ page }) => {
+  const errors = collectErrors(page);
+  await mockAPI(page, false, true);
+  await page.addInitScript(() => {
+    navigator.geolocation.getCurrentPosition = (_success, failure) => failure({ code: 1 });
+  });
+  await page.goto(`/#live/${roomID}`);
+  await page.getByRole("button", { name: "Chọn mua", exact: true }).click();
+  const checkout = page.getByRole("dialog", { name: "Đặt hàng", exact: true });
+  await fillDelivery(checkout, { ...receiver, province_code: "79" });
+  await checkout.getByRole("button", { name: "Chọn vị trí trên bản đồ", exact: true }).click();
+  await checkout.getByRole("button", { name: "Dùng vị trí hiện tại", exact: true }).click();
+  await expect(checkout.getByRole("alert")).toContainText("Không lấy được vị trí");
+  await expect(checkout.getByRole("region", { name: "Bản đồ chọn địa chỉ" })).toBeVisible();
+  await expect(checkout.getByLabel("Chi tiết thanh toán")).toContainText("40.000");
+  await checkout.getByRole("button", { name: "Xác nhận đặt hàng", exact: true }).click();
+  await expect(checkout).not.toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`#live/${roomID}$`));
+  expect(errors).toEqual([]);
+});
+
+test("a shop without shipping setup cannot produce a fake zero-fee order", async ({ page }) => {
+  const writes = await mockAPI(page, false, true);
+  await page.route("**/api/orders/quote", (route) => route.fulfill({
+    status: 409, contentType: "application/json", body: JSON.stringify({ error: "shipping_not_configured" }),
+  }));
+  await page.goto(`/#live/${roomID}`);
+  await page.getByRole("button", { name: "Chọn mua", exact: true }).click();
+  const checkout = page.getByRole("dialog", { name: "Đặt hàng", exact: true });
+  await fillDelivery(checkout);
+  await expect(checkout.getByRole("alert")).toContainText("Shop chưa thiết lập");
+  await expect(checkout.getByRole("button", { name: "Xác nhận đặt hàng" })).toBeDisabled();
+  expect(writes.filter((write) => write.path === "/api/orders")).toHaveLength(0);
+});
+
+test("a changed shipping quote requires a second confirmation and preserves the request key", async ({ page }) => {
+  await mockAPI(page, false, true);
+  let fee = 25000;
+  const attempts = [];
+  await page.route("**/api/orders/quote", (route) => {
+    const input = route.request().postDataJSON();
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      unit_price: 80000, quantity: input.quantity, items_subtotal: 80000 * input.quantity,
+      shipping_fee: fee, total_amount: 80000 * input.quantity + fee, pickup_province: "Thành phố Hà Nội", currency: "VND",
+    }) });
+  });
+  await page.route("**/api/orders", (route) => {
+    attempts.push(route.request().postDataJSON());
+    if (attempts.length === 1) {
+      fee = 30000;
+      return route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ error: "checkout_changed" }) });
+    }
+    return route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ order_id: "66666666-6666-4666-8666-666666666666", status: "pending" }) });
+  });
+  await page.goto(`/#live/${roomID}`);
+  await page.getByRole("button", { name: "Chọn mua", exact: true }).click();
+  const checkout = page.getByRole("dialog", { name: "Đặt hàng", exact: true });
+  await fillDelivery(checkout);
+  await checkout.getByLabel("Ghi chú giao hàng (không bắt buộc)", { exact: true }).fill("Gọi trước khi giao");
+  await checkout.getByRole("button", { name: "Xác nhận đặt hàng" }).click();
+  await expect(checkout.getByRole("alert")).toContainText("vừa thay đổi");
+  await expect(checkout.getByLabel("Chi tiết thanh toán")).toContainText("110.000");
+  expect(attempts).toHaveLength(1);
+  await checkout.getByRole("button", { name: "Xác nhận đặt hàng" }).click();
+  await expect(checkout).not.toBeVisible();
+  expect(attempts).toHaveLength(2);
+  expect(attempts[0].request_id).toEqual(attempts[1].request_id);
+  expect(attempts[1].expected_total).toBe(110000);
+  expect(attempts[1].note).toBe("Gọi trước khi giao");
 });

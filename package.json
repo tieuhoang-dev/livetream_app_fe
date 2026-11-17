@@ -13,6 +13,7 @@
     "test:ui": "playwright test"
   },
   "dependencies": {
+    "leaflet": "^1.9.4",
     "livekit-client": "2.23.0",
     "lucide-react": "^0.468.0",
     "react": "^19.1.1",

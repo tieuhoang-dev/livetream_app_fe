@@ -26,6 +26,8 @@ import {
 import { liveCommand, request } from "./api";
 import { LiveVideo } from "./LiveVideo";
 import { LiveComments } from "./LiveComments";
+import { addressText } from "./DeliveryAddress";
+import { ShippingSettingsPanel } from "./ShippingSettings";
 import {
   Back,
   date,
@@ -1108,6 +1110,17 @@ function OrderDetail({ api, path, refresh, reload, close, seller, notice }) {
                 </div>
               ))}
             </div>
+            {order.delivery ? (
+              <section className="order-delivery" aria-label="Thông tin nhận hàng">
+                <h3>Thông tin nhận hàng</h3>
+                <strong>{order.delivery.recipient.name}</strong>
+                <span>{order.delivery.recipient.phone}</span>
+                <p>{addressText(order.delivery.recipient)}</p>
+                {order.delivery.recipient.latitude != null && <a target="_blank" rel="noopener noreferrer" href={`https://www.openstreetmap.org/?mlat=${order.delivery.recipient.latitude}&mlon=${order.delivery.recipient.longitude}#map=17/${order.delivery.recipient.latitude}/${order.delivery.recipient.longitude}`}>Xem vị trí giao hàng trên bản đồ</a>}
+                {order.delivery.note && <p>Ghi chú: {order.delivery.note}</p>}
+              </section>
+            ) : <p className="payment-note">Đơn cũ chưa có thông tin giao hàng.</p>}
+            {order.items_subtotal != null && <div className="checkout-breakdown"><div><span>Tiền hàng</span><strong>{money(order.items_subtotal)}</strong></div><div><span>Phí vận chuyển</span><strong>{order.shipping_fee === 0 ? "Miễn phí" : money(order.shipping_fee)}</strong></div></div>}
             <div className="checkout-total">
               <span>Tổng tiền</span>
               <strong>{money(order.total_amount)}</strong>
@@ -1239,6 +1252,7 @@ export function Seller(props) {
                 ["products", "Sản phẩm"],
                 ["lives", "Phiên live"],
                 ["sales", "Đơn bán"],
+                ["shipping", "Giao hàng"],
               ].map(([key, label]) => (
                 <button
                   key={key}
@@ -1249,7 +1263,7 @@ export function Seller(props) {
                 </button>
               ))}
             </div>
-            {tab !== "sales" && (
+            {["products", "lives"].includes(tab) && (
               <button
                 className="button primary"
                 onClick={() =>
@@ -1367,6 +1381,7 @@ export function Seller(props) {
             </section>
           )}
           {tab === "sales" && <Orders {...props} seller />}
+          {tab === "shipping" && <ShippingSettingsPanel api={api} notice={notice} reload={reload} />}
         </>
       )}
       {editor && (

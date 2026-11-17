@@ -80,3 +80,25 @@ git commit -m "Initial LiveMart frontend"
 git remote add origin https://github.com/<tai-khoan>/livetream_app_fe.git
 git push -u origin main
 ```
+
+## Địa chỉ giao hàng và bản đồ
+
+Trong **Kênh người bán → Giao hàng**, shop nhập người liên hệ, số điện thoại,
+tỉnh/thành, phường/xã và địa chỉ lấy hàng, rồi cấu hình phí nội tỉnh/liên tỉnh
+và ngưỡng miễn phí nếu có. Shop chưa cấu hình thì checkout sẽ báo rõ và chưa
+cho xác nhận đơn.
+
+Người mua nhập thông tin nhận hàng, ghi chú và chọn COD/chuyển khoản.
+Backend báo tiền hàng, phí ship và tổng phải trả dựa trên địa chỉ hai bên;
+đặt xong vẫn ở phòng live. Chi tiết đơn lưu địa chỉ/phí tại thời điểm đặt.
+
+Bản đồ Leaflet/OpenStreetMap cho phép bấm chọn, kéo ghim, dùng điểm giữa bản
+đồ hoặc lấy vị trí hiện tại. Không cần API key; giữ attribution OpenStreetMap.
+Cần Internet để tải nền bản đồ; GPS cần HTTPS hoặc localhost và quyền trình
+duyệt. Nếu không định vị/tải bản đồ được, địa chỉ nhập tay vẫn dùng được.
+Ghim là tọa độ hỗ trợ giao hàng, không tự thay địa chỉ hoặc tính quãng đường
+hãng vận chuyển. Phí hiện theo mức shop, chưa tích hợp API vận chuyển.
+
+Dữ liệu mã/tên 34 tỉnh/thành trong `src/provinces.json` lấy từ
+https://provinces.open-api.vn/api/v2/p/ ngày 17/11/2026, đồng bộ với backend.
+Cần cập nhật backend chứa API quote/shipping-settings cùng phiên bản FE này.

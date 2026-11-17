@@ -6,6 +6,13 @@ const configuredURL = (import.meta.env.VITE_PUBLIC_API_URL || "").replace(
 );
 const apiOrigin = import.meta.env.DEV ? "" : configuredURL;
 const messages = {
+	invalid_delivery_address: "Kiểm tra họ tên, số điện thoại và địa chỉ nhận hàng (hoặc địa chỉ lấy hàng của shop).",
+	invalid_shipping_settings: "Nhập đầy đủ phí ship hợp lệ. Phí có thể bằng 0; ngưỡng miễn phí phải lớn hơn 0.",
+	shipping_not_configured: "Shop chưa thiết lập địa chỉ lấy hàng và phí giao hàng. Vui lòng liên hệ người bán.",
+	checkout_changed: "Giá hoặc phí ship vừa thay đổi. Hãy kiểm tra tổng tiền mới và xác nhận lại.",
+	duplicate_request_conflict: "Yêu cầu đặt hàng đã được dùng với thông tin khác. Hãy mở lại hộp đặt hàng.",
+	invalid_checkout_request: "Thông tin đặt hàng chưa hợp lệ.",
+	invalid_payment_method: "Phương thức thanh toán chưa hợp lệ.",
   insufficient_stock: "Số lượng còn trong kho không đủ.",
   live_media_unavailable:
     "Backend chưa cấu hình LiveKit. Kiểm tra LIVEKIT_URL, LIVEKIT_API_KEY và LIVEKIT_API_SECRET.",
@@ -67,6 +74,7 @@ export async function request(
         `Backend trả lỗi ${response.status}.`,
     );
     error.status = response.status;
+    error.code = payload?.error;
     throw error;
   }
   return payload;

@@ -50,6 +50,7 @@ function App() {
   const [notice, setNotice] = useState("");
   const [refresh, setRefresh] = useState(0);
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [deliveryDraft, setDeliveryDraft] = useState(null);
   const [mobileSearch, setMobileSearch] = useState(false);
   const activeUser = mode === "demo" ? demoUser : session?.profile;
   const api = useMemo(
@@ -86,6 +87,7 @@ function App() {
     setMode(next);
     setModal(null);
     setSelectedOrder(null);
+    setDeliveryDraft(null);
     navigate("home");
   }
   function withAccount(next) {
@@ -119,6 +121,7 @@ function App() {
     setSession(null);
     setModal(null);
     setSelectedOrder(null);
+    setDeliveryDraft(null);
     navigate("home");
     setNotice("Đã đăng xuất.");
   }
@@ -346,7 +349,9 @@ function App() {
           product={modal.product}
           live={modal.live}
           close={close}
-          onOrder={(id) => {
+          initialDelivery={deliveryDraft}
+          onOrder={(id, delivery) => {
+            setDeliveryDraft(delivery);
             close();
             reload();
             setSelectedOrder(id);
