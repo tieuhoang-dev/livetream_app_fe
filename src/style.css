@@ -1486,6 +1486,9 @@ dialog::backdrop {
 .delivery-fields label { display: grid; gap: 6px; color: var(--ink); font-size: 13px; font-weight: 600; }
 .delivery-fields .form-columns { margin: 0; }
 .delivery-map { height: 250px; width: 100%; border-radius: 10px; isolation: isolate; z-index: 0; background: var(--pale); }
+.address-options { display: flex; flex-wrap: wrap; gap: 10px 18px; }
+.address-options label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.address-options input[type="radio"] { width: 16px; height: 16px; min-height: 0; margin: 0; accent-color: #fe2c55; }
 .delivery-map-panel { display: grid; gap: 10px; }
 .delivery-pin { display: grid; place-items: center; color: #fe2c55; background: white; border: 3px solid #fe2c55; border-radius: 50%; box-shadow: 0 2px 8px #0005; }
 .delivery-pin span { font-size: 12px; line-height: 1; }

@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { request } from "./api";
 import { Picture } from "./ui";
+import { LivePickupModal } from "./LivePickupModal";
 
 function mediaError(error) {
   switch (error.name) {
@@ -45,6 +46,7 @@ export function LiveVideo({
   const [error, setError] = useState("");
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [ending, setEnding] = useState(false);
+  const [pickupOpen, setPickupOpen] = useState(false);
   const onEndedRef = useRef(onEnded);
   useEffect(() => {
     onEndedRef.current = onEnded;
@@ -62,6 +64,7 @@ export function LiveVideo({
   useEffect(() => () => release(), []);
   useEffect(() => {
     if (live.status !== "start") {
+      setPickupOpen(false);
       release();
       setMedia({});
       setPhase("idle");
@@ -320,7 +323,7 @@ export function LiveVideo({
           {phase === "idle" && (
             <button
               className="button primary"
-              onClick={() => withAccount(connect)}
+              onClick={() => isOwner ? setPickupOpen(true) : withAccount(connect)}
             >
               {isOwner ? <Radio size={18} /> : <CirclePlay size={18} />}
               {isOwner ? "Bắt đầu phát" : "Xem trực tiếp"}
@@ -402,6 +405,10 @@ export function LiveVideo({
           {error}
         </p>
       )}
+      {pickupOpen && <LivePickupModal api={api} live={live} close={() => setPickupOpen(false)} onReady={() => {
+        setPickupOpen(false);
+        withAccount(connect);
+      }} />}
     </div>
   );
 }

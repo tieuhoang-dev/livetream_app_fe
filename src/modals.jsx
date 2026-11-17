@@ -259,7 +259,7 @@ export function CheckoutModal({ api, product, live, close, onOrder, initialDeliv
   }, [api, quoteKey, quoteAttempt]);
   async function submit(event) {
     event.preventDefault();
-    if (pending || quoting || !quote) return;
+    if (pending || quoting || !quote || !addressReady(delivery)) return;
     setPending(true);
     setError("");
     try {
@@ -284,7 +284,7 @@ export function CheckoutModal({ api, product, live, close, onOrder, initialDeliv
         <label>Số lượng
           <input type="number" min="1" max={product.stock_quantity} step="1" value={quantity} onChange={(event) => setQuantity(event.target.value)} disabled={pending} required />
         </label>
-        <AddressFields value={delivery} onChange={setDelivery} disabled={pending} />
+        <AddressFields api={api} value={delivery} onChange={setDelivery} disabled={pending} />
         <label>Ghi chú giao hàng (không bắt buộc)
           <textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={500} rows={2} disabled={pending} placeholder="Ví dụ: gọi trước khi giao…" />
         </label>
@@ -304,7 +304,7 @@ export function CheckoutModal({ api, product, live, close, onOrder, initialDeliv
         {!quote && !quoteError && !quoting && <p className="payment-note">Điền thông tin nhận hàng để xem tổng tiền và phí ship.</p>}
         {quoteError && <div><p className="form-error" role="alert">{quoteError}</p><button type="button" className="text-button" onClick={() => setQuoteAttempt((value) => value + 1)}>Thử tính lại</button></div>}
         {error && <p className="form-error" role="alert">{error}</p>}
-        <button className="button primary" disabled={pending || quoting || !quote}>
+        <button className="button primary" disabled={pending || quoting || !quote || !addressReady(delivery)}>
           {pending ? "Đang đặt…" : "Xác nhận đặt hàng"}<ArrowRight size={17} />
         </button>
       </form>

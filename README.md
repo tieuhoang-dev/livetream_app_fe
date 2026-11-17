@@ -96,8 +96,21 @@ Bản đồ Leaflet/OpenStreetMap cho phép bấm chọn, kéo ghim, dùng đi�
 đồ hoặc lấy vị trí hiện tại. Không cần API key; giữ attribution OpenStreetMap.
 Cần Internet để tải nền bản đồ; GPS cần HTTPS hoặc localhost và quyền trình
 duyệt. Nếu không định vị/tải bản đồ được, địa chỉ nhập tay vẫn dùng được.
-Ghim là tọa độ hỗ trợ giao hàng, không tự thay địa chỉ hoặc tính quãng đường
-hãng vận chuyển. Phí hiện theo mức shop, chưa tích hợp API vận chuyển.
+Chọn **Sử dụng vị trí hiện tại** để lấy GPS và tự điền tỉnh/thành, phường/xã,
+địa chỉ từ backend. Bạn vẫn nhập tên, số điện thoại và bổ sung số nhà/căn hộ;
+GPS không xác định được số căn hộ. Chọn **Nhập địa chỉ** nếu muốn điền tay.
+Phí hiện theo mức shop, chưa tích hợp quãng đường hoặc API vận chuyển.
+
+Khi người bán bấm **Bắt đầu phát**, form nơi lấy hàng của phiên mặc định định
+vị hiện tại. Kiểm tra địa chỉ, rồi bấm **Dùng địa chỉ và bắt đầu phát**.
+Nếu GPS bị từ chối/lỗi, chọn **Nhập địa chỉ** để dùng địa chỉ đã lưu hoặc sửa
+lại. Mỗi phiên có nơi lấy hàng riêng, không đổi địa chỉ shop hay đơn đã tạo.
+Vị trí được lấy một lần lúc bắt đầu phát, không theo dõi liên tục khi di chuyển.
+
+Đổi tọa độ thành địa chỉ dùng Nominatim/OpenStreetMap qua backend (cần Internet).
+Nếu nhà cung cấp không trả đủ phường/xã hoặc số nhà, form yêu cầu bổ sung.
+Khi đổi sang nhập tay, kết quả GPS đến chậm không ghi đè dữ liệu đã nhập.
+Chế độ dữ liệu mẫu dùng địa chỉ nhập tay; tự điền từ GPS cần kết nối backend.
 
 Dữ liệu mã/tên 34 tỉnh/thành trong `src/provinces.json` lấy từ
 https://provinces.open-api.vn/api/v2/p/ ngày 17/11/2026, đồng bộ với backend.

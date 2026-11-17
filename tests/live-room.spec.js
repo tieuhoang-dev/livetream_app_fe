@@ -185,6 +185,8 @@ const buyerID = "44444444-4444-4444-8444-444444444444";
 
 async function mockAPI(page, owner = false, signedIn = owner) {
   const writes = [];
+  let shipping = { pickup_address: { ...receiver, name: "Chủ shop", province_name: "Thành phố Hà Nội" }, same_province_fee: 25000, other_province_fee: 40000, free_shipping_from: null };
+  let livePickup = null;
   const room = {
     id: roomID,
     title: "Phòng kiểm tra API",
@@ -238,7 +240,16 @@ async function mockAPI(page, owner = false, signedIn = owner) {
         body: request.postDataJSON(),
         authorization: request.headers().authorization,
       });
-    if (path === "/api/orders/quote") {
+    if (path === "/api/delivery/reverse-geocode") {
+      const point = request.postDataJSON();
+      payload = { address: { ...point, location_mode: "current", province_code: "1", province_name: "Thành phố Hà Nội", ward: "Phường Hoàn Kiếm", address_line: "12 Đinh Tiên Hoàng" }, attribution: "© OpenStreetMap contributors" };
+    } else if (path === "/api/sales/shipping-settings") {
+      if (request.method() === "PUT") shipping = request.postDataJSON();
+      payload = { configured: true, settings: shipping };
+    } else if (path === `/api/livestreams/${roomID}/pickup`) {
+      if (request.method() === "PUT") livePickup = request.postDataJSON().pickup_address;
+      payload = { pickup_address: livePickup || shipping.pickup_address };
+    } else if (path === "/api/orders/quote") {
       const input = request.postDataJSON();
       const fee = input.delivery.province_code === "1" ? 25000 : 40000;
       payload = { unit_price: item.discount_price, quantity: input.quantity, items_subtotal: input.quantity * item.discount_price, shipping_fee: fee, total_amount: input.quantity * item.discount_price + fee, currency: "VND", shipping_zone: input.delivery.province_code === "1" ? "same_province" : "other_province", pickup_province: "Thành phố Hà Nội" };
@@ -404,14 +415,24 @@ test("API owner can add inventory and media errors retain the live interface", a
   });
   expect(writes[0].authorization).toContain("Bearer ui-fixture.");
   await dialog.getByRole("button", { name: "Đóng", exact: true }).click();
+  await page.addInitScript(() => {
+    navigator.geolocation.getCurrentPosition = (_success, failure) => failure({ code: 1 });
+  });
+  await page.evaluate(() => { navigator.geolocation.getCurrentPosition = (_success, failure) => failure({ code: 1 }); });
   await page.getByRole("button", { name: "Bắt đầu phát", exact: true }).click();
+  const origin = page.getByRole("dialog", { name: "Nơi lấy hàng của phiên live", exact: true });
+  await expect(origin.getByRole("alert")).toContainText("Không lấy được vị trí");
+  await origin.getByRole("radio", { name: "Nhập địa chỉ", exact: true }).check();
+  await origin.getByRole("button", { name: "Dùng địa chỉ và bắt đầu phát", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("LiveKit");
   expect(writes.at(-1).body).toEqual({ role: "publisher" });
   await expect(
     page.getByRole("heading", { name: "Phòng kiểm tra API" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Bắt đầu phát", exact: true }).click();
-  await expect.poll(() => writes.length).toBe(3);
+  await origin.getByRole("radio", { name: "Nhập địa chỉ", exact: true }).check();
+  await origin.getByRole("button", { name: "Dùng địa chỉ và bắt đầu phát", exact: true }).click();
+  await expect.poll(() => writes.filter((entry) => entry.path.endsWith("/media-token")).length).toBe(2);
   expect(errors).toEqual([]);
 });
 
@@ -464,15 +485,16 @@ test("seller saves pickup address, shipping fees and a GPS pin", async ({ page, 
   const errors = collectErrors(page);
   await context.grantPermissions(["geolocation"]);
   await context.setGeolocation({ latitude: 21.028511, longitude: 105.804817 });
-  await demo(page);
+  await mockAPI(page, true);
   await page.goto("/#seller");
   await page.getByRole("button", { name: "Giao hàng", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Địa chỉ lấy hàng và phí giao hàng" })).toBeVisible();
   await page.getByLabel("Người liên hệ", { exact: true }).fill("Chủ shop thử nghiệm");
   await page.getByLabel("Phí ship nội tỉnh (VNĐ)", { exact: true }).fill("28000");
   await page.getByLabel("Phí ship liên tỉnh (VNĐ)", { exact: true }).fill("45000");
-  await page.getByRole("button", { name: "Chọn vị trí trên bản đồ", exact: true }).click();
-  await page.getByRole("button", { name: "Dùng vị trí hiện tại", exact: true }).click();
+  await page.getByRole("radio", { name: "Sử dụng vị trí hiện tại", exact: true }).check();
+  await expect(page.getByLabel("Phường / Xã", { exact: true })).toHaveValue("Phường Hoàn Kiếm");
+  await expect(page.getByLabel("Địa chỉ cụ thể", { exact: true })).toHaveValue("12 Đinh Tiên Hoàng");
   await expect(page.getByText("Vị trí: 21.028511, 105.804817", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Lưu cấu hình giao hàng", exact: true }).click();
   await expect(page.getByText("Đã lưu địa chỉ lấy hàng và phí vận chuyển.", { exact: true })).toBeVisible();
@@ -496,14 +518,95 @@ test("GPS denial does not prevent a typed address and inter-province checkout", 
   const checkout = page.getByRole("dialog", { name: "Đặt hàng", exact: true });
   await fillDelivery(checkout, { ...receiver, province_code: "79" });
   await checkout.getByRole("button", { name: "Chọn vị trí trên bản đồ", exact: true }).click();
-  await checkout.getByRole("button", { name: "Dùng vị trí hiện tại", exact: true }).click();
+  await checkout.getByRole("radio", { name: "Sử dụng vị trí hiện tại", exact: true }).check();
   await expect(checkout.getByRole("alert")).toContainText("Không lấy được vị trí");
+  await expect(checkout.getByRole("button", { name: "Xác nhận đặt hàng", exact: true })).toBeDisabled();
+  await checkout.getByRole("radio", { name: "Nhập địa chỉ", exact: true }).check();
   await expect(checkout.getByRole("region", { name: "Bản đồ chọn địa chỉ" })).toBeVisible();
   await expect(checkout.getByLabel("Chi tiết thanh toán")).toContainText("40.000");
   await checkout.getByRole("button", { name: "Xác nhận đặt hàng", exact: true }).click();
   await expect(checkout).not.toBeVisible();
   await expect(page).toHaveURL(new RegExp(`#live/${roomID}$`));
   expect(errors).toEqual([]);
+});
+
+test("buyer uses current location to fill the address and keeps contact and apartment details", async ({ page, context }) => {
+  const errors = collectErrors(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation({ latitude: 21.028511, longitude: 105.804817 });
+  const writes = await mockAPI(page, false, true);
+  await page.goto(`/#live/${roomID}`);
+  await page.getByRole("button", { name: /Mở giỏ sản phẩm/ }).click();
+  await page.getByRole("button", { name: "Chọn mua", exact: true }).click();
+  const checkout = page.getByRole("dialog", { name: "Đặt hàng", exact: true });
+  await checkout.getByLabel("Họ tên người nhận", { exact: true }).fill(receiver.name);
+  await checkout.getByLabel("Số điện thoại", { exact: true }).fill(receiver.phone);
+  await checkout.getByRole("radio", { name: "Sử dụng vị trí hiện tại", exact: true }).check();
+  await expect(checkout.getByLabel("Tỉnh / Thành phố", { exact: true })).toHaveValue("1");
+  await expect(checkout.getByLabel("Phường / Xã", { exact: true })).toHaveValue("Phường Hoàn Kiếm");
+  await expect(checkout.getByLabel("Địa chỉ cụ thể", { exact: true })).toHaveValue("12 Đinh Tiên Hoàng");
+  await checkout.getByLabel("Địa chỉ cụ thể", { exact: true }).fill("12 Đinh Tiên Hoàng, căn hộ 4");
+  await checkout.getByRole("button", { name: "Xác nhận đặt hàng", exact: true }).click();
+  await expect(checkout).not.toBeVisible();
+  const order = writes.find((entry) => entry.path === "/api/orders");
+  expect(order.body.delivery).toMatchObject({ name: receiver.name, phone: receiver.phone, province_code: "1", ward: "Phường Hoàn Kiếm", address_line: "12 Đinh Tiên Hoàng, căn hộ 4", latitude: 21.028511, longitude: 105.804817, location_mode: "current" });
+  await expect(page).toHaveURL(new RegExp(`#live/${roomID}$`));
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect(errors).toEqual([]);
+});
+
+test("seller defaults to the broadcast location and saves it before requesting media", async ({ page, context }) => {
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation({ latitude: 21.028511, longitude: 105.804817 });
+  const writes = await mockAPI(page, true);
+  await page.goto(`/#live/${roomID}`);
+  await page.getByRole("button", { name: "Bắt đầu phát", exact: true }).click();
+  const origin = page.getByRole("dialog", { name: "Nơi lấy hàng của phiên live", exact: true });
+  await expect(origin.getByRole("radio", { name: "Sử dụng vị trí hiện tại", exact: true })).toBeChecked();
+  await expect(origin.getByLabel("Địa chỉ cụ thể", { exact: true })).toHaveValue("12 Đinh Tiên Hoàng");
+  await origin.getByRole("button", { name: "Dùng địa chỉ và bắt đầu phát", exact: true }).click();
+  await expect(origin).not.toBeVisible();
+  await expect(page.getByRole("alert")).toContainText("LiveKit");
+  expect(writes.map((entry) => entry.path)).toEqual(["/api/delivery/reverse-geocode", `/api/livestreams/${roomID}/pickup`, `/api/livestreams/${roomID}/media-token`]);
+  expect(writes[1].body.pickup_address).toMatchObject({ name: "Chủ shop", phone: receiver.phone, location_mode: "current", latitude: 21.028511, longitude: 105.804817, address_line: "12 Đinh Tiên Hoàng" });
+  expect(writes.some((entry) => entry.path === "/api/sales/shipping-settings")).toBe(false);
+});
+
+test("geocoder failure blocks current-location checkout and allows explicit manual fallback", async ({ page, context }) => {
+  await context.grantPermissions(["geolocation"]);
+  await context.setGeolocation({ latitude: 21.028511, longitude: 105.804817 });
+  const writes = await mockAPI(page, false, true);
+  await page.route("**/api/delivery/reverse-geocode", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "geocoding_unavailable" }) }));
+  await page.goto(`/#live/${roomID}`);
+  await page.getByRole("button", { name: "Chọn mua", exact: true }).click();
+  const checkout = page.getByRole("dialog", { name: "Đặt hàng", exact: true });
+  await fillDelivery(checkout);
+  await checkout.getByRole("radio", { name: "Sử dụng vị trí hiện tại", exact: true }).check();
+  await expect(checkout.getByRole("alert")).toContainText("Chưa tìm được địa chỉ");
+  await expect(checkout.getByRole("button", { name: "Xác nhận đặt hàng", exact: true })).toBeDisabled();
+  await expect(checkout.getByLabel("Họ tên người nhận", { exact: true })).toHaveValue(receiver.name);
+  await checkout.getByRole("radio", { name: "Nhập địa chỉ", exact: true }).check();
+  await checkout.getByRole("button", { name: "Xác nhận đặt hàng", exact: true }).click();
+  await expect(checkout).not.toBeVisible();
+  expect(writes.find((entry) => entry.path === "/api/orders").body.delivery).toMatchObject({ ...receiver, location_mode: "manual" });
+});
+
+test("late GPS callbacks cannot replace a manually entered address", async ({ page }) => {
+  const writes = await mockAPI(page, false, true);
+  await page.addInitScript(() => { navigator.geolocation.getCurrentPosition = (success) => { window.pendingGPS = success; }; });
+  await page.goto(`/#live/${roomID}`);
+  await page.getByRole("button", { name: "Chọn mua", exact: true }).click();
+  const checkout = page.getByRole("dialog", { name: "Đặt hàng", exact: true });
+  await fillDelivery(checkout);
+  await checkout.getByRole("radio", { name: "Sử dụng vị trí hiện tại", exact: true }).check();
+  await checkout.getByRole("radio", { name: "Nhập địa chỉ", exact: true }).check();
+  await checkout.getByLabel("Địa chỉ cụ thể", { exact: true }).fill("99 Địa chỉ nhập tay");
+  await page.evaluate(() => window.pendingGPS({ coords: { latitude: 21.028511, longitude: 105.804817 } }));
+  await checkout.getByRole("button", { name: "Xác nhận đặt hàng", exact: true }).click();
+  await expect(checkout).not.toBeVisible();
+  expect(writes.some((entry) => entry.path === "/api/delivery/reverse-geocode")).toBe(false);
+  expect(writes.find((entry) => entry.path === "/api/orders").body.delivery).toMatchObject({ address_line: "99 Địa chỉ nhập tay", latitude: null, longitude: null, location_mode: "manual" });
 });
 
 test("a shop without shipping setup cannot produce a fake zero-fee order", async ({ page }) => {

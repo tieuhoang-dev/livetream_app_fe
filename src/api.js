@@ -6,6 +6,9 @@ const configuredURL = (import.meta.env.VITE_PUBLIC_API_URL || "").replace(
 );
 const apiOrigin = import.meta.env.DEV ? "" : configuredURL;
 const messages = {
+	invalid_coordinates: "Vị trí chưa hợp lệ. Hãy định vị lại hoặc nhập địa chỉ.",
+	geocoding_unavailable: "Chưa tìm được địa chỉ từ bản đồ. Hãy thử lại hoặc chọn Nhập địa chỉ.",
+	location_not_supported: "Chưa xác định được tỉnh/thành tại vị trí này ở Việt Nam. Hãy chọn Nhập địa chỉ.",
 	invalid_delivery_address: "Kiểm tra họ tên, số điện thoại và địa chỉ nhận hàng (hoặc địa chỉ lấy hàng của shop).",
 	invalid_shipping_settings: "Nhập đầy đủ phí ship hợp lệ. Phí có thể bằng 0; ngưỡng miễn phí phải lớn hơn 0.",
 	shipping_not_configured: "Shop chưa thiết lập địa chỉ lấy hàng và phí giao hàng. Vui lòng liên hệ người bán.",

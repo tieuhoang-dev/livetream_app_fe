@@ -180,6 +180,7 @@ export function demoRequest(
   const state = data();
   const [, , area, key, action, productId] = path.split("/");
   const { products, lives, orders, allocations } = state;
+  if (area === "delivery" && key === "reverse-geocode") throw new Error("Tự điền địa chỉ từ GPS cần kết nối backend. Trong bản mẫu, hãy chọn Nhập địa chỉ.");
   state.shipping ??= Object.fromEntries([...new Set(products.map((product) => product.seller_id))].map((seller) => [seller, {
     pickup_address: { name: "Shop dữ liệu mẫu", phone: "0900000000", province_code: "1", province_name: provinces.find((p) => p.code === "1").name, ward: "Phường mẫu", address_line: "Địa chỉ shop mẫu", latitude: null, longitude: null },
     same_province_fee: 25000, other_province_fee: 40000, free_shipping_from: null,
