@@ -47,6 +47,7 @@ export function LiveVideo({
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [ending, setEnding] = useState(false);
   const [pickupOpen, setPickupOpen] = useState(false);
+  const [pickupFeedback, setPickupFeedback] = useState("");
   const onEndedRef = useRef(onEnded);
   useEffect(() => {
     onEndedRef.current = onEnded;
@@ -323,7 +324,7 @@ export function LiveVideo({
           {phase === "idle" && (
             <button
               className="button primary"
-              onClick={() => isOwner ? setPickupOpen(true) : withAccount(connect)}
+              onClick={() => isOwner ? setPickupOpen("start") : withAccount(connect)}
             >
               {isOwner ? <Radio size={18} /> : <CirclePlay size={18} />}
               {isOwner ? "Bắt đầu phát" : "Xem trực tiếp"}
@@ -370,6 +371,7 @@ export function LiveVideo({
               {isOwner ? "Dừng phát" : "Rời video"}
             </button>
           )}
+          {isOwner && <button className="button secondary" disabled={ending} onClick={() => { setPickupFeedback(""); setPickupOpen("settings"); }}>Cài đặt giao hàng</button>}
           {isOwner && !confirmEnd && (
             <button
               className="button danger"
@@ -405,9 +407,12 @@ export function LiveVideo({
           {error}
         </p>
       )}
-      {pickupOpen && <LivePickupModal api={api} live={live} close={() => setPickupOpen(false)} onReady={() => {
+      {pickupFeedback && <p className="payment-note" role="status">{pickupFeedback}</p>}
+      {pickupOpen && <LivePickupModal api={api} live={live} startBroadcast={pickupOpen === "start"} close={() => setPickupOpen(false)} onReady={() => {
+        const start = pickupOpen === "start";
         setPickupOpen(false);
-        withAccount(connect);
+        if (start) withAccount(connect);
+        else setPickupFeedback("Đã lưu giao hàng. Người xem có thể thử tính lại phí ship và đặt hàng.");
       }} />}
     </div>
   );

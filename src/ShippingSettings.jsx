@@ -1,6 +1,17 @@
 import { useEffect, useState } from "react";
 import { AddressFields, addressReady, emptyAddress } from "./DeliveryAddress";
 
+export function ShippingRateFields({ sameFee, otherFee, freeFrom, setSameFee, setOtherFee, setFreeFrom, disabled }) {
+  return <fieldset className="delivery-fields">
+    <legend>Phí giao hàng của shop</legend>
+    <div className="form-columns">
+      <label>Phí ship nội tỉnh (VNĐ)<input type="number" min="0" max="1000000000000" step="1" required value={sameFee} disabled={disabled} placeholder="Nhập 0 nếu miễn phí" onChange={(event) => setSameFee(event.target.value)} /></label>
+      <label>Phí ship liên tỉnh (VNĐ)<input type="number" min="0" max="1000000000000" step="1" required value={otherFee} disabled={disabled} placeholder="Nhập 0 nếu miễn phí" onChange={(event) => setOtherFee(event.target.value)} /></label>
+    </div>
+    <label>Miễn phí ship từ (VNĐ, không bắt buộc)<input type="number" min="1" max="1000000000000" step="1" value={freeFrom} disabled={disabled} onChange={(event) => setFreeFrom(event.target.value)} placeholder="Bỏ trống nếu không áp dụng" /></label>
+  </fieldset>;
+}
+
 export function ShippingSettingsPanel({ api, notice, reload }) {
   const [pickup, setPickup] = useState(emptyAddress);
   const [sameFee, setSameFee] = useState("");
@@ -44,11 +55,7 @@ export function ShippingSettingsPanel({ api, notice, reload }) {
     <p className="payment-note">Phí nội tỉnh áp dụng khi nơi lấy và nơi nhận cùng tỉnh/thành. Đây là mức shop tự cấu hình, chưa phải báo giá từ hãng vận chuyển.</p>
     {loading ? <p role="status">Đang tải cấu hình giao hàng…</p> : <form className="stack-form" onSubmit={submit}>
       <AddressFields api={api} value={pickup} onChange={setPickup} disabled={saving} pickup />
-      <div className="form-columns">
-        <label>Phí ship nội tỉnh (VNĐ)<input type="number" min="0" max="1000000000000" step="1" required value={sameFee} disabled={saving} onChange={(event) => setSameFee(event.target.value)} /></label>
-        <label>Phí ship liên tỉnh (VNĐ)<input type="number" min="0" max="1000000000000" step="1" required value={otherFee} disabled={saving} onChange={(event) => setOtherFee(event.target.value)} /></label>
-      </div>
-      <label>Miễn phí ship từ (VNĐ, không bắt buộc)<input type="number" min="1" max="1000000000000" step="1" value={freeFrom} disabled={saving} onChange={(event) => setFreeFrom(event.target.value)} placeholder="Bỏ trống nếu không áp dụng" /></label>
+      <ShippingRateFields {...{ sameFee, otherFee, freeFrom, setSameFee, setOtherFee, setFreeFrom }} disabled={saving} />
       <button className="button primary" disabled={saving || !addressReady(pickup)}>{saving ? "Đang lưu…" : "Lưu cấu hình giao hàng"}</button>
     </form>}
     {error && <div><p className="form-error" role="alert">{error}</p><button className="button secondary" type="button" onClick={() => setAttempt((value) => value + 1)}>Tải lại cấu hình</button></div>}

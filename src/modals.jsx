@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, LockKeyhole, ShoppingBag } from "lucide-react";
 import { request } from "./api";
-import { AddressFields, addressReady, emptyAddress } from "./DeliveryAddress";
+import { AddressFields, addressReady, addressMissingFields, shippingAreaReady, emptyAddress } from "./DeliveryAddress";
 import { Modal, money, paymentMethods, Picture } from "./ui";
 
 const authActions = {
@@ -233,14 +233,16 @@ export function CheckoutModal({ api, product, live, close, onOrder, initialDeliv
     delivery,
     ...(live ? { livestream_id: live.id } : {}),
   };
-  const quoteKey = JSON.stringify(base);
+  const quoteKey = JSON.stringify({ product_id: base.product_id, quantity: base.quantity,
+    ...(live ? { livestream_id: live.id } : {}), delivery: { province_code: delivery.province_code } });
+  const canQuote = shippingAreaReady(delivery);
   const requestKey = JSON.stringify({ ...base, note });
   const requestID = useMemo(newCheckoutID, [requestKey]);
   useEffect(() => {
     setQuote(null);
     setQuoteError("");
     setQuoting(false);
-    if (!addressReady(delivery) || !Number.isInteger(Number(quantity)) || Number(quantity) <= 0) return;
+    if (!canQuote || !Number.isInteger(Number(quantity)) || Number(quantity) <= 0) return;
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       setQuoting(true);
@@ -256,7 +258,7 @@ export function CheckoutModal({ api, product, live, close, onOrder, initialDeliv
       }
     }, 350);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [api, quoteKey, quoteAttempt]);
+  }, [api, quoteKey, canQuote, quoteAttempt]);
   async function submit(event) {
     event.preventDefault();
     if (pending || quoting || !quote || !addressReady(delivery)) return;
@@ -301,7 +303,8 @@ export function CheckoutModal({ api, product, live, close, onOrder, initialDeliv
           <div className="checkout-total"><span>Tổng phải trả</span><strong>{quote ? money(quote.total_amount) : "Chưa tính"}</strong></div>
         </div>
         {quoting && <p className="payment-note" role="status">Đang tính phí vận chuyển…</p>}
-        {!quote && !quoteError && !quoting && <p className="payment-note">Điền thông tin nhận hàng để xem tổng tiền và phí ship.</p>}
+        {!quote && !quoteError && !quoting && <p className="payment-note">Chọn tỉnh/thành nhận hàng để xem phí ship.</p>}
+        {quote && !addressReady(delivery) && <p className="payment-note">Đã tính phí ship. Bổ sung {addressMissingFields(delivery).join(", ")} để đặt hàng.</p>}
         {quoteError && <div><p className="form-error" role="alert">{quoteError}</p><button type="button" className="text-button" onClick={() => setQuoteAttempt((value) => value + 1)}>Thử tính lại</button></div>}
         {error && <p className="form-error" role="alert">{error}</p>}
         <button className="button primary" disabled={pending || quoting || !quote || !addressReady(delivery)}>

@@ -6,9 +6,25 @@ export const emptyAddress = {
   name: "", phone: "", province_code: "", ward: "", address_line: "",
   latitude: null, longitude: null,
 };
-export function addressReady(value) {
-  return [value.name, value.phone, value.province_code, value.ward, value.address_line].every((field) => String(field || "").trim()) &&
+function phoneReady(phone) {
+  return /^(0[0-9]{9,10}|\+84[0-9]{9,10})$/.test(String(phone || "").replace(/[ .-]/g, ""));
+}
+export function shippingAreaReady(value) {
+  return provinces.some((province) => province.code === value.province_code) &&
     (value.location_mode !== "current" || (value.latitude != null && value.longitude != null));
+}
+export function addressMissingFields(value) {
+  return [
+    !String(value.name || "").trim() && "họ tên",
+    !phoneReady(value.phone) && "số điện thoại hợp lệ",
+    !value.province_code && "tỉnh/thành",
+    !String(value.ward || "").trim() && "phường/xã",
+    !String(value.address_line || "").trim() && "số nhà, tên đường",
+    value.location_mode === "current" && (value.latitude == null || value.longitude == null) && "vị trí GPS hoặc chọn nhập tay",
+  ].filter(Boolean);
+}
+export function addressReady(value) {
+  return shippingAreaReady(value) && addressMissingFields(value).length === 0;
 }
 export function addressText(address) {
   return [address?.address_line, address?.ward, address?.province_name || provinces.find((p) => p.code === address?.province_code)?.name].filter(Boolean).join(", ");
@@ -18,11 +34,20 @@ export function AddressFields({ api, value, onChange, disabled, pickup = false, 
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState("");
   const [mode, setMode] = useState(autoLocate ? "current" : value.location_mode || "manual");
+  const [wards, setWards] = useState([]);
   const latest = useRef({ value, onChange, disabled });
   latest.current = { value, onChange, disabled };
   const generation = useRef(0);
   const controller = useRef(null);
   const id = useId();
+  useEffect(() => {
+    let active = true;
+    setWards([]);
+    if (value.province_code) import("./wards.json").then((data) => {
+      if (active) setWards((data.default || data)[value.province_code] || []);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [value.province_code]);
   useEffect(() => {
     if (autoLocate) locate();
     return () => { generation.current += 1; controller.current?.abort(); };
@@ -45,7 +70,6 @@ export function AddressFields({ api, value, onChange, disabled, pickup = false, 
       if (request.attempt !== generation.current || request.signal.aborted || latest.current.disabled) return;
       const current = latest.current;
       current.onChange({ ...current.value, ...result.address, name: current.value.name, phone: current.value.phone, location_mode: "current" });
-      setShowMap(true);
       if (!result.address.ward || !result.address.address_line) setError("Bản đồ chưa có đủ địa chỉ. Kiểm tra và bổ sung phường/xã, số nhà bên dưới.");
     } catch (err) {
       if (request.attempt === generation.current && !request.signal.aborted) setError(err.message);
@@ -65,10 +89,10 @@ export function AddressFields({ api, value, onChange, disabled, pickup = false, 
       }
     }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
   }
-  const update = (field) => (event) => onChange({ ...value, [field]: event.target.value });
+  const update = (field) => (event) => { setError(""); onChange({ ...value, [field]: event.target.value }); };
   return (
     <fieldset className="delivery-fields" disabled={disabled}>
-      <legend>{pickup ? "Địa chỉ lấy hàng của shop" : "Thông tin nhận hàng"}</legend>
+      <legend>{pickup ? "Địa chỉ lấy hàng" : "Thông tin nhận hàng"}</legend>
       <div className="address-options" role="group" aria-label="Cách chọn địa chỉ">
         <label><input type="radio" name={`address-${id}`} checked={mode === "manual"} onChange={() => {
           generation.current += 1; controller.current?.abort(); setLocating(false); setError(""); setMode("manual");
@@ -88,21 +112,25 @@ export function AddressFields({ api, value, onChange, disabled, pickup = false, 
           <input autoComplete={pickup ? "off" : "shipping name"} value={value.name || ""} onChange={update("name")} maxLength={100} required />
         </label>
         <label>Số điện thoại
-          <input type="tel" autoComplete={pickup ? "off" : "shipping tel"} value={value.phone || ""} onChange={update("phone")} maxLength={20} required />
+          <input type="tel" aria-label="Số điện thoại" autoComplete={pickup ? "off" : "shipping tel"} value={value.phone || ""} onChange={update("phone")} maxLength={20} placeholder="Ví dụ: 0901234567" aria-invalid={Boolean(value.phone && !phoneReady(value.phone))} required />
+          {value.phone && !phoneReady(value.phone) && <small className="form-error">Nhập số điện thoại Việt Nam bắt đầu bằng 0 hoặc +84.</small>}
         </label>
       </div>
       <div className="form-columns">
         <label>Tỉnh / Thành phố
           <select aria-label="Tỉnh / Thành phố" value={value.province_code || ""} onChange={(event) => {
             setMode("manual");
-            onChange({ ...value, province_code: event.target.value, location_mode: "manual", latitude: null, longitude: null });
+            setError("");
+            const code = event.target.value;
+            onChange({ ...value, province_code: code, province_name: provinces.find((p) => p.code === code)?.name || "", ward: code === value.province_code ? value.ward : "", location_mode: "manual", latitude: null, longitude: null });
           }} disabled={locating} required>
             <option value="">Chọn tỉnh / thành phố</option>
             {provinces.map((province) => <option key={province.code} value={province.code}>{province.name}</option>)}
           </select>
         </label>
         <label>Phường / Xã
-          <input autoComplete="shipping address-level3" value={value.ward || ""} onChange={update("ward")} disabled={locating} maxLength={100} required />
+          <input aria-label="Phường / Xã" list={`${id}-wards`} autoComplete="off" value={value.ward || ""} onChange={update("ward")} disabled={locating || !value.province_code} placeholder={value.province_code ? "Gõ tên để chọn phường/xã" : "Chọn tỉnh/thành trước"} maxLength={100} required />
+          <datalist id={`${id}-wards`}>{wards.map((name) => <option key={name} value={name} />)}</datalist>
         </label>
       </div>
       <label>Địa chỉ cụ thể
@@ -115,7 +143,7 @@ export function AddressFields({ api, value, onChange, disabled, pickup = false, 
         if (mode === "current" && address.latitude != null) void resolvePoint(address.latitude, address.longitude, beginLocation());
         else onChange(address);
       }} disabled={disabled || locating} /></div>}
-      {!showMap && value.latitude != null && <p className="payment-note">Đã ghim vị trí giao hàng.</p>}
+      {!showMap && value.latitude != null && <p className="payment-note">Đã xác định vị trí. Bạn có thể mở bản đồ để kiểm tra hoặc chỉnh lại.</p>}
     </fieldset>
   );
 }

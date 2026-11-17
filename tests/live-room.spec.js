@@ -247,8 +247,13 @@ async function mockAPI(page, owner = false, signedIn = owner) {
       if (request.method() === "PUT") shipping = request.postDataJSON();
       payload = { configured: true, settings: shipping };
     } else if (path === `/api/livestreams/${roomID}/pickup`) {
-      if (request.method() === "PUT") livePickup = request.postDataJSON().pickup_address;
-      payload = { pickup_address: livePickup || shipping.pickup_address };
+      if (request.method() === "PUT") {
+        const input = request.postDataJSON();
+        livePickup = input.pickup_address;
+        if (input.shipping_rates) shipping = { ...shipping, ...input.shipping_rates };
+      }
+      payload = { pickup_address: livePickup || shipping.pickup_address, shipping_configured: true,
+        shipping_rates: { same_province_fee: shipping.same_province_fee, other_province_fee: shipping.other_province_fee, free_shipping_from: shipping.free_shipping_from } };
     } else if (path === "/api/orders/quote") {
       const input = request.postDataJSON();
       const fee = input.delivery.province_code === "1" ? 25000 : 40000;
@@ -495,7 +500,7 @@ test("seller saves pickup address, shipping fees and a GPS pin", async ({ page, 
   await page.getByRole("radio", { name: "Sử dụng vị trí hiện tại", exact: true }).check();
   await expect(page.getByLabel("Phường / Xã", { exact: true })).toHaveValue("Phường Hoàn Kiếm");
   await expect(page.getByLabel("Địa chỉ cụ thể", { exact: true })).toHaveValue("12 Đinh Tiên Hoàng");
-  await expect(page.getByText("Vị trí: 21.028511, 105.804817", { exact: true })).toBeVisible();
+  await expect(page.getByText("Đã xác định vị trí. Bạn có thể mở bản đồ để kiểm tra hoặc chỉnh lại.", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Lưu cấu hình giao hàng", exact: true }).click();
   await expect(page.getByText("Đã lưu địa chỉ lấy hàng và phí vận chuyển.", { exact: true })).toBeVisible();
   await page.reload();
@@ -621,6 +626,95 @@ test("a shop without shipping setup cannot produce a fake zero-fee order", async
   await expect(checkout.getByRole("alert")).toContainText("Shop chưa thiết lập");
   await expect(checkout.getByRole("button", { name: "Xác nhận đặt hàng" })).toBeDisabled();
   expect(writes.filter((write) => write.path === "/api/orders")).toHaveLength(0);
+});
+
+test("province quotes shipping before contact details and offers local ward suggestions", async ({ page }) => {
+  const writes = await mockAPI(page, false, true);
+  await page.goto(`/#live/${roomID}`);
+  await page.getByRole("button", { name: "Chọn mua", exact: true }).click();
+  const checkout = page.getByRole("dialog", { name: "Đặt hàng", exact: true });
+  await expect(checkout.getByLabel("Phường / Xã", { exact: true })).toBeDisabled();
+  await checkout.getByLabel("Tỉnh / Thành phố", { exact: true }).selectOption("1");
+  await expect(checkout.getByLabel("Chi tiết thanh toán")).toContainText("25.000");
+  await expect(checkout.locator('datalist option[value="Phường Ba Đình"]')).toHaveCount(1);
+  await expect(checkout.getByRole("button", { name: "Xác nhận đặt hàng", exact: true })).toBeDisabled();
+  await checkout.getByLabel("Phường / Xã", { exact: true }).fill("Phường Ba Đình");
+  await checkout.getByLabel("Tỉnh / Thành phố", { exact: true }).selectOption("79");
+  await expect(checkout.getByLabel("Phường / Xã", { exact: true })).toHaveValue("");
+  await expect(checkout.locator('datalist option[value="Phường Sài Gòn"]')).toHaveCount(1);
+  await expect(checkout.getByLabel("Chi tiết thanh toán")).toContainText("40.000");
+  const before = writes.filter((entry) => entry.path === "/api/orders/quote").length;
+  await checkout.getByLabel("Họ tên người nhận", { exact: true }).fill(receiver.name);
+  await checkout.getByLabel("Số điện thoại", { exact: true }).fill("123");
+  await expect(checkout.getByText("Nhập số điện thoại Việt Nam bắt đầu bằng 0 hoặc +84.", { exact: true })).toBeVisible();
+  await checkout.getByLabel("Số điện thoại", { exact: true }).fill(receiver.phone);
+  await checkout.getByLabel("Phường / Xã", { exact: true }).fill("Phường Sài Gòn");
+  await checkout.getByLabel("Địa chỉ cụ thể", { exact: true }).fill(receiver.address_line);
+  await page.waitForTimeout(500);
+  expect(writes.filter((entry) => entry.path === "/api/orders/quote")).toHaveLength(before);
+  await checkout.getByRole("button", { name: "Xác nhận đặt hàng", exact: true }).click();
+  await expect(checkout).not.toBeVisible();
+  expect(writes.find((entry) => entry.path === "/api/orders").body).toMatchObject({ expected_total: 120000, delivery: { province_code: "79", ward: "Phường Sài Gòn" } });
+});
+
+test("first-time seller must enter both shipping fees before starting media", async ({ page }) => {
+  const writes = await mockAPI(page, true);
+  const saved = [];
+  await page.addInitScript(() => { navigator.geolocation.getCurrentPosition = (_success, failure) => failure({ code: 1 }); });
+  await page.route(`**/api/livestreams/${roomID}/pickup`, (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ contentType: "application/json", body: JSON.stringify({ pickup_address: receiver, shipping_configured: false, shipping_rates: null }) });
+    saved.push(route.request().postDataJSON());
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ pickup_address: saved.at(-1).pickup_address }) });
+  });
+  await page.goto(`/#live/${roomID}`);
+  await page.getByRole("button", { name: "Bắt đầu phát", exact: true }).click();
+  const origin = page.getByRole("dialog", { name: "Nơi lấy hàng của phiên live", exact: true });
+  await origin.getByRole("radio", { name: "Nhập địa chỉ", exact: true }).check();
+  const submit = origin.getByRole("button", { name: "Dùng địa chỉ và bắt đầu phát", exact: true });
+  await expect(submit).toBeDisabled();
+  await origin.getByLabel("Phí ship nội tỉnh (VNĐ)", { exact: true }).fill("25000");
+  await expect(submit).toBeDisabled();
+  expect(writes.some((entry) => entry.path.endsWith("/media-token"))).toBe(false);
+  await origin.getByLabel("Phí ship liên tỉnh (VNĐ)", { exact: true }).fill("40000");
+  await submit.click();
+  await expect(origin).not.toBeVisible();
+  await expect(page.getByRole("alert")).toContainText("LiveKit");
+  expect(saved).toHaveLength(1);
+  expect(saved[0].shipping_rates).toEqual({ same_province_fee: 25000, other_province_fee: 40000, free_shipping_from: null });
+});
+
+test("seller fixes missing shipping inside an existing room and buyer retries successfully", async ({ page, context }) => {
+  const sellerWrites = await mockAPI(page, true);
+  let rates = null;
+  await page.route(`**/api/livestreams/${roomID}/pickup`, (route) => {
+    if (route.request().method() === "GET") return route.fulfill({ contentType: "application/json", body: JSON.stringify({ pickup_address: receiver, shipping_configured: Boolean(rates), shipping_rates: rates }) });
+    const input = route.request().postDataJSON(); rates = input.shipping_rates;
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ pickup_address: input.pickup_address }) });
+  });
+  const buyer = await context.newPage();
+  const buyerWrites = await mockAPI(buyer, false, true);
+  await buyer.route("**/api/orders/quote", (route) => route.fulfill({ status: rates ? 200 : 409, contentType: "application/json", body: JSON.stringify(rates ? { unit_price: 80000, quantity: 1, items_subtotal: 80000, shipping_fee: rates.same_province_fee, total_amount: 80000 + rates.same_province_fee, currency: "VND", pickup_province: "Thành phố Hà Nội" } : { error: "shipping_not_configured" }) }));
+  await buyer.goto(`/#live/${roomID}`);
+  await buyer.getByRole("button", { name: "Chọn mua", exact: true }).click();
+  const checkout = buyer.getByRole("dialog", { name: "Đặt hàng", exact: true });
+  await fillDelivery(checkout);
+  await expect(checkout.getByRole("alert")).toContainText("Shop chưa thiết lập");
+  await page.goto(`/#live/${roomID}`);
+  const player = await page.locator(".live-video").elementHandle();
+  await page.getByRole("button", { name: "Cài đặt giao hàng", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "Nơi lấy hàng của phiên live", exact: true });
+  await settings.getByLabel("Phí ship nội tỉnh (VNĐ)", { exact: true }).fill("25000");
+  await settings.getByLabel("Phí ship liên tỉnh (VNĐ)", { exact: true }).fill("40000");
+  await settings.getByRole("button", { name: "Lưu cài đặt giao hàng", exact: true }).click();
+  await expect(settings).not.toBeVisible();
+  expect(await player.evaluate((element) => element.isConnected)).toBe(true);
+  expect(sellerWrites.some((entry) => entry.path.endsWith("/media-token"))).toBe(false);
+  await checkout.getByRole("button", { name: "Thử tính lại", exact: true }).click();
+  await expect(checkout.getByLabel("Chi tiết thanh toán")).toContainText("25.000");
+  await checkout.getByRole("button", { name: "Xác nhận đặt hàng", exact: true }).click();
+  await expect(checkout).not.toBeVisible();
+  expect(buyerWrites.find((entry) => entry.path === "/api/orders").body.expected_total).toBe(105000);
+  await expect(buyer).toHaveURL(new RegExp(`#live/${roomID}$`));
 });
 
 test("a changed shipping quote requires a second confirmation and preserves the request key", async ({ page }) => {
