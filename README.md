@@ -50,7 +50,7 @@ Chủ phiên có thể bấm **Thêm hàng** ngay trong phòng để chọn sả
 - Vuốt lên/xuống trên vùng video hoặc dùng phím mũi tên trên desktop để chuyển giữa các phiên đang mở được API trả về. Vuốt trong bình luận không chuyển phòng.
 - Bình luận có thể ẩn/hiện. Sản phẩm đang ghim mở chi tiết; người xem đặt hàng, chủ phiên dùng Thêm sản phẩm để quản lý kho live.
 - Khi đặt hàng, người mua chọn COD hoặc chuyển khoản ngân hàng. Backend lưu lựa chọn ở `payment_method`; chuyển khoản hiện theo hướng dẫn của người bán, chưa thu tiền tự động qua cổng thanh toán.
-- Đặt hàng trong live chỉ đóng hộp đặt hàng, cập nhật tồn kho và giữ người xem trong phòng. Người mua chủ động mở mục Đơn hàng khi cần xem chi tiết. Mua ngoài live vẫn mở đơn vừa tạo như trước.
+- Đặt hàng trong live chỉ đóng hộp đặt hàng, cập nhật tồn kho và giữ nguyên phòng/video. Hiện thông báo thành công kèm nút **Xem đơn**; chỉ khi bấm nút này người mua mới chuyển sang đơn vừa tạo. Mua ngoài live vẫn mở đơn như trước.
 - Chia sẻ sao chép liên kết phòng; trình duyệt hỗ trợ có thể mở video toàn màn hình.
 - Thả tim là hiệu ứng giao diện cục bộ, chưa đồng bộ tới người xem khác. Không hiển thị số lượt tim hoặc người xem giả.
 - Ảnh và bình luận ví dụ chỉ thuộc chế độ Dùng dữ liệu mẫu. Video API vẫn đi qua LiveKit và giữ tỷ lệ của nguồn phát.
@@ -102,3 +102,17 @@ hãng vận chuyển. Phí hiện theo mức shop, chưa tích hợp API vận c
 Dữ liệu mã/tên 34 tỉnh/thành trong `src/provinces.json` lấy từ
 https://provinces.open-api.vn/api/v2/p/ ngày 17/11/2026, đồng bộ với backend.
 Cần cập nhật backend chứa API quote/shipping-settings cùng phiên bản FE này.
+
+## Danh sách live qua WebSocket
+
+Trang khám phá, danh sách chuyển phòng và tab Phiên live của người bán dùng
+`/api/livestreams/ws` (ws/wss theo URL backend). Client gửi
+`{type: "list_lives", request_id, query}` với bộ lọc, thứ tự và phân trang,
+nhận `list_lives_success` gồm `data/total/page/page_size`. Backend đẩy snapshot
+mới khi tạo/kết thúc live hoặc thêm/xóa sản phẩm trong live; FE không poll
+REST để lấy danh sách. Mất kết nối thì tự nối lại, gửi lại bộ lọc hiện tại.
+
+Kênh này công khai, chỉ đọc, không cần đăng nhập và không thay kết nối chat
+`/api/auth/ws`. API chi tiết live, sản phẩm, đơn và media token vẫn dùng REST.
+Cần cập nhật backend PR #13 cùng FE này; reverse proxy/tunnel phải hỗ trợ
+WebSocket Upgrade. Vite đã proxy `/api` với `ws: true`.

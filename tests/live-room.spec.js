@@ -148,10 +148,10 @@ test.describe("phone", () => {
     await expect(checkout).not.toBeVisible();
     expect(await player.evaluate((element) => element.isConnected)).toBe(true);
     await expect(
-      page.getByText("Đã tạo đơn hàng.", { exact: true }),
+      page.getByText("Đặt hàng thành công. Bạn vẫn đang ở trong live.", { exact: true }),
     ).toBeVisible();
-    await page.getByRole("button", { name: "Rời phòng live", exact: true }).click();
-    await page.getByRole("button", { name: "Đơn hàng", exact: true }).first().click();
+    await page.getByRole("status").getByRole("button", { name: "Xem đơn", exact: true }).click();
+    await expect(page).toHaveURL(/#orders$/);
     const detail = page.getByRole("dialog", { name: "Chi tiết đơn hàng" });
     await expect(detail.getByText("Chuyển khoản ngân hàng", { exact: true })).toBeVisible();
     expect(errors).toEqual([]);
@@ -202,6 +202,13 @@ async function mockAPI(page, owner = false, signedIn = owner) {
     original_price: 100000,
     is_pinned: true,
   };
+  await page.routeWebSocket("**/api/livestreams/ws", (socket) => {
+    socket.onMessage((raw) => {
+      const message = JSON.parse(raw);
+      socket.send(JSON.stringify({ type: "list_lives_success", request_id: message.request_id,
+        data: [room], total: 1, page: message.query.page || 1, page_size: message.query.page_size || 20 }));
+    });
+  });
   const profile = {
     user_id: owner ? sellerID : buyerID,
     username: owner ? "Chủ shop" : "Người mua",
@@ -314,6 +321,8 @@ for (const [method, viewport] of [
     await checkout.getByRole("button", { name: "Xác nhận đặt hàng" }).click();
     await expect(checkout).not.toBeVisible();
     await expect(page).toHaveURL(new RegExp(`#live/${roomID}$`));
+    await expect(page.getByRole("status").filter({ hasText: "Đặt hàng thành công" })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Chi tiết đơn hàng" })).toHaveCount(0);
     expect(await player.evaluate((element) => element.isConnected)).toBe(true);
     const orders = writes.filter((entry) => entry.path === "/api/orders");
     expect(orders).toHaveLength(1);
@@ -325,6 +334,29 @@ for (const [method, viewport] of [
     expect(errors).toEqual([]);
   });
 }
+
+test("guest signs in during live checkout and stays in the same room after ordering", async ({ page }) => {
+  const errors = collectErrors(page);
+  const writes = await mockAPI(page);
+  const token = "ui-fixture." + Buffer.from(JSON.stringify({ user_id: buyerID, exp: Date.now() / 1000 + 3600 })).toString("base64url") + ".fixture";
+  await page.route("**/api/users/login", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ token }) }));
+  await page.goto(`/#live/${roomID}`);
+  const player = await page.locator(".live-video").elementHandle();
+  await page.getByRole("button", { name: "Chọn mua", exact: true }).click();
+  const auth = page.getByRole("dialog", { name: "Đăng nhập", exact: true });
+  await auth.getByLabel("Email", { exact: true }).fill("buyer@example.invalid");
+  await auth.getByLabel("Mật khẩu", { exact: true }).fill("Fixture-password-123");
+  await auth.getByRole("button", { name: "Đăng nhập", exact: true }).click();
+  const checkout = page.getByRole("dialog", { name: "Đặt hàng", exact: true });
+  await fillDelivery(checkout);
+  await checkout.getByRole("button", { name: "Xác nhận đặt hàng", exact: true }).click();
+  await expect(checkout).not.toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`#live/${roomID}$`));
+  await expect(page.getByRole("status").filter({ hasText: "Đặt hàng thành công" })).toBeVisible();
+  expect(await player.evaluate((element) => element.isConnected)).toBe(true);
+  expect(writes.filter((entry) => entry.path === "/api/orders")[0].body.livestream_id).toBe(roomID);
+  expect(errors).toEqual([]);
+});
 
 test("failed live order keeps the chosen payment, quantity and room", async ({ page }) => {
   await mockAPI(page, false, true);

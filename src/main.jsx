@@ -320,7 +320,12 @@ function App() {
       {notice && (
         <div className="toast" role="status">
           <Bell size={18} />
-          {notice}
+          <span>{typeof notice === "string" ? notice : notice.message}</span>
+          {notice.orderId && <button type="button" onClick={() => {
+            setSelectedOrder(notice.orderId);
+            setNotice("");
+            navigate("orders");
+          }}>Xem đơn</button>}
         </div>
       )}
       {modal?.type === "auth" && <AuthModal close={close} onLogin={signIn} />}
@@ -354,9 +359,13 @@ function App() {
             setDeliveryDraft(delivery);
             close();
             reload();
-            setSelectedOrder(id);
-            if (!modal.live) navigate("orders");
-            setNotice("Đã tạo đơn hàng.");
+            if (modal.live?.id || inLiveRoom) {
+              setNotice({ message: "Đặt hàng thành công. Bạn vẫn đang ở trong live.", orderId: id });
+            } else {
+              setSelectedOrder(id);
+              navigate("orders");
+              setNotice("Đã tạo đơn hàng.");
+            }
           }}
         />
       )}

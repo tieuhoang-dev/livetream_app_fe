@@ -28,6 +28,7 @@ import { LiveVideo } from "./LiveVideo";
 import { LiveComments } from "./LiveComments";
 import { addressText } from "./DeliveryAddress";
 import { ShippingSettingsPanel } from "./ShippingSettings";
+import { useLiveList } from "./useLiveList";
 import {
   Back,
   date,
@@ -142,9 +143,8 @@ export function Discover({
     setFilters((current) => ({ ...current, [key]: value }));
     setPage(1);
   };
-  const lives = useData(
+  const lives = useLiveList(
     api,
-    "/api/livestreams",
     listing ? { ...filters, q, page, page_size: pageSize } : { page_size: 4 },
     refresh,
   );
@@ -460,9 +460,8 @@ export function LiveRoom({
     true,
     mode === "api" && roomOpen ? 5000 : 0,
   );
-  const feed = useData(
+  const feed = useLiveList(
     api,
-    "/api/livestreams",
     { status: "start", page_size: 20 },
     refresh,
   );
@@ -1211,9 +1210,8 @@ export function Seller(props) {
     { seller_id: activeUser?.user_id, page, page_size: pageSize },
     refresh,
   );
-  const lives = useData(
+  const lives = useLiveList(
     api,
-    activeUser && tab === "lives" ? "/api/livestreams" : null,
     {
       seller_id: activeUser?.user_id,
       status: "all",
@@ -1221,6 +1219,7 @@ export function Seller(props) {
       page_size: pageSize,
     },
     refresh,
+    Boolean(activeUser && tab === "lives"),
   );
   const done = (message, liveId) => {
     setEditor(null);

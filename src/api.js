@@ -1,4 +1,4 @@
-import { demoLiveCommand, demoRequest } from "./demo";
+import { demoLiveCommand, demoRequest, subscribeDemoLives } from "./demo";
 
 const configuredURL = (import.meta.env.VITE_PUBLIC_API_URL || "").replace(
   /\/+$/,
@@ -81,9 +81,70 @@ export async function request(
 }
 
 export function apiFor(mode, token) {
-  return mode === "demo"
+  const api = mode === "demo"
     ? async (path, options) => demoRequest(path, options)
     : (path, options) => request(path, { ...options, token });
+  api.subscribeLives = mode === "demo" ? subscribeDemoLives : subscribeLives;
+  return api;
+}
+
+// The public catalog socket is independent of /api/auth/ws, so browsing does
+// not disconnect chat and does not require signing in.
+function subscribeLives(query, { onData, onError }) {
+  const url = new URL(`${apiOrigin}/api/livestreams/ws`, location.origin);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  let stopped = false;
+  let socket;
+  let timer;
+  let timeout;
+  let retryDelay = 500;
+  function connect() {
+    if (stopped) return;
+    let ws;
+    function reconnect() {
+      if (stopped || socket !== ws) return;
+      clearTimeout(timeout);
+      if (ws) {
+        ws.onclose = ws.onerror = null;
+        ws.close();
+      }
+      onError(new Error("Mất kết nối danh sách live. Đang kết nối lại…"));
+      timer = setTimeout(connect, retryDelay);
+      retryDelay = Math.min(retryDelay * 2, 15000);
+    }
+    try {
+      ws = new WebSocket(url);
+      socket = ws;
+    } catch {
+      socket = ws;
+      reconnect();
+      return;
+    }
+    timeout = setTimeout(reconnect, 8000);
+    ws.onopen = () => ws.send(JSON.stringify({ type: "list_lives", request_id: "catalog", query }));
+    ws.onmessage = ({ data }) => {
+      if (stopped || socket !== ws) return;
+      let message;
+      try { message = JSON.parse(data); } catch { return; }
+      if (message.request_id !== "catalog") return;
+      if (message.type === "list_lives_success" && Array.isArray(message.data)) {
+        clearTimeout(timeout);
+        retryDelay = 500;
+        onData(message);
+      } else if (message.type === "list_lives_error") {
+        clearTimeout(timeout);
+        onError(new Error(message.error === "invalid_query" ? messages.invalid_query : "Không tải được danh sách live. Hãy thử lại."));
+      }
+    };
+    ws.onerror = ws.onclose = reconnect;
+  }
+  connect();
+  return () => {
+    stopped = true;
+    clearTimeout(timer);
+    clearTimeout(timeout);
+    socket?.close();
+  };
 }
 
 export function readSession() {

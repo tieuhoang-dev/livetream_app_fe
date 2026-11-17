@@ -134,7 +134,19 @@ function freshData() {
     ),
   };
 }
-const store = (state) => sessionStorage.setItem(storage, JSON.stringify(state));
+const store = (state) => {
+  sessionStorage.setItem(storage, JSON.stringify(state));
+  window.dispatchEvent(new Event("livemart-demo-change"));
+};
+export function subscribeDemoLives(query, { onData, onError }) {
+  const read = () => {
+    try { onData(demoRequest("/api/livestreams", { query })); }
+    catch (error) { onError(error); }
+  };
+  window.addEventListener("livemart-demo-change", read);
+  read();
+  return () => window.removeEventListener("livemart-demo-change", read);
+}
 const matches = (text, q) =>
   text
     .toLocaleLowerCase("vi")

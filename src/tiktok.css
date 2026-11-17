@@ -584,6 +584,16 @@ textarea:focus-visible {
   border: 1px solid #ffffff17;
   box-shadow: 0 8px 30px #0005;
 }
+.toast > span { min-width: 0; }
+.toast button {
+  flex-shrink: 0;
+  color: #fff;
+  border: 1px solid #ffffff45;
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: #ffffff12;
+  font-weight: 700;
+}
 .photo-fallback {
   background: #25252f;
   color: #666679;
