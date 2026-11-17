@@ -6,6 +6,14 @@ const configuredURL = (import.meta.env.VITE_PUBLIC_API_URL || "").replace(
 );
 const apiOrigin = import.meta.env.DEV ? "" : configuredURL;
 const messages = {
+	shipping_provider_not_configured: "Hệ thống báo phí vận chuyển chưa được cấu hình. Vui lòng liên hệ quản trị viên.",
+	shipping_unavailable: "Chưa lấy được báo phí vận chuyển. Vui lòng thử lại.",
+	shipping_address_required: "Chọn đủ khu vực giao hàng theo danh mục GHN để lấy báo phí.",
+	shipping_address_unavailable: "GHN chưa hỗ trợ hoặc chưa nhận diện được khu vực này. Hãy kiểm tra lại địa chỉ giao hàng.",
+	shipping_product_incomplete: "Người bán cần bổ sung khối lượng và kích thước kiện của sản phẩm để báo phí.",
+	shipping_invalid_parcel: "Khối lượng hoặc kích thước kiện chưa phù hợp để báo phí vận chuyển.",
+	shipping_pickup_required: "Người bán chưa lưu địa chỉ lấy hàng.",
+	shipping_pickup_area_required: "Người bán cần chọn khu vực lấy hàng theo danh mục GHN trong Cài đặt giao hàng.",
 	invalid_coordinates: "Vị trí chưa hợp lệ. Hãy định vị lại hoặc nhập địa chỉ.",
 	geocoding_unavailable: "Chưa tìm được địa chỉ từ bản đồ. Hãy thử lại hoặc chọn Nhập địa chỉ.",
 	location_not_supported: "Chưa xác định được tỉnh/thành tại vị trí này ở Việt Nam. Hãy chọn Nhập địa chỉ.",
@@ -88,6 +96,7 @@ export function apiFor(mode, token) {
     ? async (path, options) => demoRequest(path, options)
     : (path, options) => request(path, { ...options, token });
   api.subscribeLives = mode === "demo" ? subscribeDemoLives : subscribeLives;
+  api.mode = mode;
   return api;
 }
 

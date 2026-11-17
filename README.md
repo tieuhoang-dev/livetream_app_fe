@@ -81,53 +81,37 @@ git remote add origin https://github.com/<tai-khoan>/livetream_app_fe.git
 git push -u origin main
 ```
 
-## Địa chỉ giao hàng và bản đồ
+## Địa chỉ, kiện hàng và báo phí GHN
 
-Trong **Kênh người bán → Giao hàng**, shop nhập người liên hệ, số điện thoại,
-tỉnh/thành, phường/xã và địa chỉ lấy hàng, rồi cấu hình phí nội tỉnh/liên tỉnh
-và ngưỡng miễn phí nếu có. Shop chưa cấu hình thì checkout sẽ báo rõ và chưa
-cho xác nhận đơn.
+Ứng dụng chỉ lấy báo giá từ GHN, không tạo vận đơn, không đặt lịch lấy hàng.
+Backend mặc định GHN staging, giữ Token/ShopId trong `.env`; xem SHIPPING.md
+ở repo backend để cấu hình. Không có cấu hình hoặc hãng lỗi thì checkout
+báo rõ, không dùng phí 0 hay phí shop nhập thay thế.
 
-Người mua nhập thông tin nhận hàng, ghi chú và chọn COD/chuyển khoản.
-Backend báo tiền hàng, phí ship và tổng phải trả dựa trên địa chỉ hai bên;
-đặt xong vẫn ở phòng live. Chi tiết đơn lưu địa chỉ/phí tại thời điểm đặt.
+Chủ shop lưu địa chỉ lấy hàng tại Kênh người bán → Giao hàng. Khi tạo/sửa sản
+phẩm, bổ sung khối lượng (gram) và dài/rộng/cao (cm) của kiện cho một đơn vị.
+Sản phẩm cũ thiếu thông tin cần được sửa trước khi báo phí. Nhiều đơn vị được
+cộng khối lượng và xếp chồng chiều cao; kiện dự tính hiển thị trong checkout.
 
-Bản đồ Leaflet/OpenStreetMap cho phép bấm chọn, kéo ghim, dùng điểm giữa bản
-đồ hoặc lấy vị trí hiện tại. Không cần API key; giữ attribution OpenStreetMap.
-Cần Internet để tải nền bản đồ; GPS cần HTTPS hoặc localhost và quyền trình
-duyệt. Nếu không định vị/tải bản đồ được, địa chỉ nhập tay vẫn dùng được.
-Chọn **Sử dụng vị trí hiện tại** để lấy GPS và tự điền tỉnh/thành, phường/xã,
-địa chỉ từ backend. Bạn vẫn nhập tên, số điện thoại và bổ sung số nhà/căn hộ;
-GPS không xác định được số căn hộ. Chọn **Nhập địa chỉ** nếu muốn điền tay.
-Phí hiện theo mức shop, chưa tích hợp quãng đường hoặc API vận chuyển.
+Bắt đầu phát vẫn mặc định GPS và xác nhận địa chỉ riêng của phiên; có thể
+chuyển nhập tay. Tên/điện thoại và số nhà/căn hộ do người dùng xác nhận. GPS
+cần HTTPS/localhost và quyền trình duyệt, không theo dõi liên tục khi di chuyển.
 
-Khi người bán bấm **Bắt đầu phát**, form nơi lấy hàng của phiên mặc định định
-vị hiện tại. Kiểm tra địa chỉ, rồi bấm **Dùng địa chỉ và bắt đầu phát**.
-Nếu GPS bị từ chối/lỗi, chọn **Nhập địa chỉ** để dùng địa chỉ đã lưu hoặc sửa
-lại. Mỗi phiên có nơi lấy hàng riêng, không đổi địa chỉ shop hay đơn đã tạo.
-Vị trí được lấy một lần lúc bắt đầu phát, không theo dõi liên tục khi di chuyển.
+Chọn tỉnh hiện tại, khu vực GHN nếu có nhiều vùng cũ, quận/huyện và phường/xã
+trong danh mục hãng để báo phí. Endpoint tính phí GHN hiện dùng mã địa giới cũ,
+GPS không được đoán mã khu vực. Danh mục được lấy qua backend, không gửi token
+hãng vào trình duyệt. Danh mục phường offline trong src/wards.json vẫn hỗ trợ
+nhập tay khi chưa kết nối được hãng, nhưng chưa đủ để xác nhận báo giá.
 
-Đổi tọa độ thành địa chỉ dùng Nominatim/OpenStreetMap qua backend (cần Internet).
-Nếu nhà cung cấp không trả đủ phường/xã hoặc số nhà, form yêu cầu bổ sung.
-Khi đổi sang nhập tay, kết quả GPS đến chậm không ghi đè dữ liệu đã nhập.
-Chế độ dữ liệu mẫu dùng địa chỉ nhập tay; tự điền từ GPS cần kết nối backend.
+Checkout gửi mã khu vực và phương thức thanh toán cho backend; chỉ hiển thị
+phí server trả. Tạo đơn nội bộ lấy lại báo giá và kiểm tra giá/kiện/nơi lấy,
+lưu snapshot kèm môi trường, quote_only và thời điểm. COD có thể ảnh hưởng phụ
+phí nên đổi phương thức sẽ lấy lại báo giá. Đặt xong vẫn trong live; Xem đơn
+là thao tác chủ động. Không gửi đơn nội bộ sang hãng vận chuyển.
 
-Dữ liệu mã/tên 34 tỉnh/thành trong `src/provinces.json` lấy từ
-https://provinces.open-api.vn/api/v2/p/ ngày 17/11/2026, đồng bộ với backend.
-Cần cập nhật backend chứa API quote/shipping-settings cùng phiên bản FE này.
-
-Nếu người mua gặp **Shop chưa thiết lập địa chỉ lấy hàng và phí giao hàng**,
-chủ live bấm **Cài đặt giao hàng** ngay trong phòng, xác nhận địa chỉ và nhập
-phí nội tỉnh/liên tỉnh rồi lưu. Không cần dừng video. Người mua bấm **Thử tính
-lại** để tiếp tục đơn đang điền. Lần đầu bắt đầu phát cũng có hai ô phí này;
-không tự gán phí mặc định, nhập 0 chỉ khi shop chủ động miễn phí.
-
-Phí được báo ngay khi chọn tỉnh/thành. Họ tên, số điện thoại và địa chỉ chi
-tiết vẫn phải đủ trước khi tạo đơn; sửa thông tin liên hệ không làm mất báo
-giá đang xem. Phường/xã có gợi ý theo tỉnh, dùng danh mục 3.321 phường/xã
-đóng gói trong `src/wards.json`, lấy từ provinces.open-api.vn API v2 ngày
-17/11/2026. Đổi tỉnh sẽ xóa phường/xã cũ. Có thể gõ địa chỉ không có trong gợi
-ý để xử lý dữ liệu bản đồ cũ. Bản đồ chỉ mở khi người dùng muốn kiểm tra ghim.
+Leaflet/OpenStreetMap hỗ trợ kiểm tra ghim, giữ attribution. Dịch vụ reverse
+geocoding cần Internet; địa chỉ nhập tay luôn dùng được. Bản demo có phí mẫu,
+được ghi rõ là minh họa, không gọi GHN. Cập nhật cả backend và FE cùng nhau.
 
 ## Danh sách live qua WebSocket
 

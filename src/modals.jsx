@@ -233,9 +233,10 @@ export function CheckoutModal({ api, product, live, close, onOrder, initialDeliv
     delivery,
     ...(live ? { livestream_id: live.id } : {}),
   };
-  const quoteKey = JSON.stringify({ product_id: base.product_id, quantity: base.quantity,
-    ...(live ? { livestream_id: live.id } : {}), delivery: { province_code: delivery.province_code } });
-  const canQuote = shippingAreaReady(delivery);
+  const quoteKey = JSON.stringify({ product_id: base.product_id, quantity: base.quantity, payment_method: paymentMethod,
+    ...(live ? { livestream_id: live.id } : {}), delivery: { province_code: delivery.province_code,
+      carrier_province_id: delivery.carrier_province_id, carrier_district_id: delivery.carrier_district_id, carrier_ward_code: delivery.carrier_ward_code } });
+  const canQuote = shippingAreaReady(delivery, api.mode !== "demo");
   const requestKey = JSON.stringify({ ...base, note });
   const requestID = useMemo(newCheckoutID, [requestKey]);
   useEffect(() => {
@@ -296,14 +297,15 @@ export function CheckoutModal({ api, product, live, close, onOrder, initialDeliv
           </select>
         </label>
         <p className="payment-note" id="checkout-payment-note">{paymentMethod === "bank_transfer" ? "Liên hệ người bán để nhận thông tin chuyển khoản cho đơn hàng." : "Thanh toán khi bạn nhận được hàng."}</p>
-        {quote && <p className="payment-note">Lấy hàng tại {quote.pickup_province}. Phí giao hàng theo mức shop cấu hình.</p>}
+        {quote && <p className="payment-note">Lấy hàng tại {quote.pickup_province}. {quote.shipping?.provider === "ghn" ? `Báo phí GHN${quote.shipping.environment === "staging" ? " · môi trường thử nghiệm" : ""}.` : "Phí vận chuyển minh họa trong bản mẫu."}</p>}
+        {quote?.shipping?.parcel && <p className="payment-note">Kiện dự tính: {quote.shipping.parcel.weight_grams} g · {quote.shipping.parcel.length_cm} × {quote.shipping.parcel.width_cm} × {quote.shipping.parcel.height_cm} cm.</p>}
         <div className="checkout-breakdown" aria-label="Chi tiết thanh toán">
           <div><span>Tiền hàng</span><strong>{quote ? money(quote.items_subtotal) : "Chưa tính"}</strong></div>
           <div><span>Phí vận chuyển</span><strong>{quote ? (quote.shipping_fee === 0 ? "Miễn phí" : money(quote.shipping_fee)) : "Chưa tính"}</strong></div>
           <div className="checkout-total"><span>Tổng phải trả</span><strong>{quote ? money(quote.total_amount) : "Chưa tính"}</strong></div>
         </div>
         {quoting && <p className="payment-note" role="status">Đang tính phí vận chuyển…</p>}
-        {!quote && !quoteError && !quoting && <p className="payment-note">Chọn tỉnh/thành nhận hàng để xem phí ship.</p>}
+        {!quote && !quoteError && !quoting && <p className="payment-note">Chọn đủ khu vực nhận hàng để lấy báo phí vận chuyển.</p>}
         {quote && !addressReady(delivery) && <p className="payment-note">Đã tính phí ship. Bổ sung {addressMissingFields(delivery).join(", ")} để đặt hàng.</p>}
         {quoteError && <div><p className="form-error" role="alert">{quoteError}</p><button type="button" className="text-button" onClick={() => setQuoteAttempt((value) => value + 1)}>Thử tính lại</button></div>}
         {error && <p className="form-error" role="alert">{error}</p>}

@@ -6,12 +6,18 @@ async function demo(page) {
   );
 }
 
-const receiver = { name: "Người nhận thử", phone: "0901234567", province_code: "1", ward: "Phường thử", address_line: "12 Đường thử", latitude: null, longitude: null };
+const receiver = { name: "Người nhận thử", phone: "0901234567", province_code: "1", ward: "Phường thử", address_line: "12 Đường thử", latitude: null, longitude: null, carrier_province_id: 1, carrier_district_id: 100, carrier_ward_code: "ward-100" };
+async function chooseCarrier(dialog, province = "1", wardCode = `ward-${Number(province)*100}`) {
+  await dialog.getByLabel("Quận / Huyện (GHN)", { exact: true }).selectOption(String(Number(province)*100));
+  await dialog.getByLabel("Phường / Xã", { exact: true }).selectOption(wardCode);
+}
 async function fillDelivery(dialog, value = receiver) {
   await dialog.getByLabel("Họ tên người nhận", { exact: true }).fill(value.name);
   await dialog.getByLabel("Số điện thoại", { exact: true }).fill(value.phone);
   await dialog.getByLabel("Tỉnh / Thành phố", { exact: true }).selectOption(value.province_code);
-  await dialog.getByLabel("Phường / Xã", { exact: true }).fill(value.ward);
+  const mode = await dialog.page().evaluate(() => sessionStorage.getItem("livemart-mode"));
+  if (mode === "api") await chooseCarrier(dialog, value.province_code);
+  else await dialog.getByLabel("Phường / Xã", { exact: true }).fill(value.ward);
   await dialog.getByLabel("Địa chỉ cụ thể", { exact: true }).fill(value.address_line);
 }
 test.beforeEach(async ({ page }) => {
@@ -240,7 +246,12 @@ async function mockAPI(page, owner = false, signedIn = owner) {
         body: request.postDataJSON(),
         authorization: request.headers().authorization,
       });
-    if (path === "/api/delivery/reverse-geocode") {
+    if (path === "/api/shipping/provinces") payload = { data: [{ id: 1, name: "Hà Nội", province_code: "1" }, { id: 79, name: "Hồ Chí Minh", province_code: "79" }] };
+    else if (path === "/api/shipping/districts") payload = { data: [{ id: Number(url.searchParams.get("province_id"))*100, name: "Khu vực kiểm tra", support_type: 3 }] };
+    else if (path === "/api/shipping/wards") {
+      const d = Number(url.searchParams.get("district_id"));
+      payload = { data: [{ code: `ward-${d}`, name: receiver.ward, support_type: 3 }, { code: `gps-${d}`, name: d === 100 ? "Phường Hoàn Kiếm" : "Phường Sài Gòn", support_type: 3 }] };
+    } else if (path === "/api/delivery/reverse-geocode") {
       const point = request.postDataJSON();
       payload = { address: { ...point, location_mode: "current", province_code: "1", province_name: "Thành phố Hà Nội", ward: "Phường Hoàn Kiếm", address_line: "12 Đinh Tiên Hoàng" }, attribution: "© OpenStreetMap contributors" };
     } else if (path === "/api/sales/shipping-settings") {
@@ -257,7 +268,7 @@ async function mockAPI(page, owner = false, signedIn = owner) {
     } else if (path === "/api/orders/quote") {
       const input = request.postDataJSON();
       const fee = input.delivery.province_code === "1" ? 25000 : 40000;
-      payload = { unit_price: item.discount_price, quantity: input.quantity, items_subtotal: input.quantity * item.discount_price, shipping_fee: fee, total_amount: input.quantity * item.discount_price + fee, currency: "VND", shipping_zone: input.delivery.province_code === "1" ? "same_province" : "other_province", pickup_province: "Thành phố Hà Nội" };
+      payload = { unit_price: item.discount_price, quantity: input.quantity, items_subtotal: input.quantity * item.discount_price, shipping_fee: fee, total_amount: input.quantity * item.discount_price + fee, currency: "VND", shipping_zone: "carrier", pickup_province: "Thành phố Hà Nội", shipping: { provider: "ghn", environment: "staging", quote_only: true } };
     } else if (path.endsWith("/media-token")) {
       status = 503;
       payload = { error: "live_media_unavailable" };
@@ -428,6 +439,7 @@ test("API owner can add inventory and media errors retain the live interface", a
   const origin = page.getByRole("dialog", { name: "Nơi lấy hàng của phiên live", exact: true });
   await expect(origin.getByRole("alert")).toContainText("Không lấy được vị trí");
   await origin.getByRole("radio", { name: "Nhập địa chỉ", exact: true }).check();
+  await chooseCarrier(origin);
   await origin.getByRole("button", { name: "Dùng địa chỉ và bắt đầu phát", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("LiveKit");
   expect(writes.at(-1).body).toEqual({ role: "publisher" });
@@ -436,6 +448,7 @@ test("API owner can add inventory and media errors retain the live interface", a
   ).toBeVisible();
   await page.getByRole("button", { name: "Bắt đầu phát", exact: true }).click();
   await origin.getByRole("radio", { name: "Nhập địa chỉ", exact: true }).check();
+  await chooseCarrier(origin);
   await origin.getByRole("button", { name: "Dùng địa chỉ và bắt đầu phát", exact: true }).click();
   await expect.poll(() => writes.filter((entry) => entry.path.endsWith("/media-token")).length).toBe(2);
   expect(errors).toEqual([]);
@@ -486,27 +499,26 @@ test("ended live and all viewport sizes keep controls on screen", async ({
   }
 });
 
-test("seller saves pickup address, shipping fees and a GPS pin", async ({ page, context }) => {
+test("seller saves pickup address and a GPS pin without editing carrier fees", async ({ page, context }) => {
   const errors = collectErrors(page);
   await context.grantPermissions(["geolocation"]);
   await context.setGeolocation({ latitude: 21.028511, longitude: 105.804817 });
   await mockAPI(page, true);
   await page.goto("/#seller");
   await page.getByRole("button", { name: "Giao hàng", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Địa chỉ lấy hàng và phí giao hàng" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Địa chỉ lấy hàng" })).toBeVisible();
   await page.getByLabel("Người liên hệ", { exact: true }).fill("Chủ shop thử nghiệm");
-  await page.getByLabel("Phí ship nội tỉnh (VNĐ)", { exact: true }).fill("28000");
-  await page.getByLabel("Phí ship liên tỉnh (VNĐ)", { exact: true }).fill("45000");
   await page.getByRole("radio", { name: "Sử dụng vị trí hiện tại", exact: true }).check();
-  await expect(page.getByLabel("Phường / Xã", { exact: true })).toHaveValue("Phường Hoàn Kiếm");
+  await chooseCarrier(page, "1", "gps-100");
+  await expect(page.getByLabel("Phường / Xã", { exact: true })).toHaveValue("gps-100");
   await expect(page.getByLabel("Địa chỉ cụ thể", { exact: true })).toHaveValue("12 Đinh Tiên Hoàng");
   await expect(page.getByText("Đã xác định vị trí. Bạn có thể mở bản đồ để kiểm tra hoặc chỉnh lại.", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Lưu cấu hình giao hàng", exact: true }).click();
-  await expect(page.getByText("Đã lưu địa chỉ lấy hàng và phí vận chuyển.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Đã lưu địa chỉ lấy hàng.", { exact: true })).toBeVisible();
   await page.reload();
   await page.getByRole("button", { name: "Giao hàng", exact: true }).click();
   await expect(page.getByLabel("Người liên hệ", { exact: true })).toHaveValue("Chủ shop thử nghiệm");
-  await expect(page.getByLabel("Phí ship nội tỉnh (VNĐ)", { exact: true })).toHaveValue("28000");
+  await expect(page.getByLabel("Phí ship nội tỉnh (VNĐ)", { exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: "Chỉnh vị trí trên bản đồ", exact: true }).click();
   await expect(page.getByText("Vị trí: 21.028511, 105.804817", { exact: true })).toBeVisible();
   expect(errors).toEqual([]);
@@ -527,6 +539,7 @@ test("GPS denial does not prevent a typed address and inter-province checkout", 
   await expect(checkout.getByRole("alert")).toContainText("Không lấy được vị trí");
   await expect(checkout.getByRole("button", { name: "Xác nhận đặt hàng", exact: true })).toBeDisabled();
   await checkout.getByRole("radio", { name: "Nhập địa chỉ", exact: true }).check();
+  await chooseCarrier(checkout, "79");
   await expect(checkout.getByRole("region", { name: "Bản đồ chọn địa chỉ" })).toBeVisible();
   await expect(checkout.getByLabel("Chi tiết thanh toán")).toContainText("40.000");
   await checkout.getByRole("button", { name: "Xác nhận đặt hàng", exact: true }).click();
@@ -549,13 +562,14 @@ test("buyer uses current location to fill the address and keeps contact and apar
   await checkout.getByLabel("Số điện thoại", { exact: true }).fill(receiver.phone);
   await checkout.getByRole("radio", { name: "Sử dụng vị trí hiện tại", exact: true }).check();
   await expect(checkout.getByLabel("Tỉnh / Thành phố", { exact: true })).toHaveValue("1");
-  await expect(checkout.getByLabel("Phường / Xã", { exact: true })).toHaveValue("Phường Hoàn Kiếm");
+  await chooseCarrier(checkout, "1", "gps-100");
+  await expect(checkout.getByLabel("Phường / Xã", { exact: true })).toHaveValue("gps-100");
   await expect(checkout.getByLabel("Địa chỉ cụ thể", { exact: true })).toHaveValue("12 Đinh Tiên Hoàng");
   await checkout.getByLabel("Địa chỉ cụ thể", { exact: true }).fill("12 Đinh Tiên Hoàng, căn hộ 4");
   await checkout.getByRole("button", { name: "Xác nhận đặt hàng", exact: true }).click();
   await expect(checkout).not.toBeVisible();
   const order = writes.find((entry) => entry.path === "/api/orders");
-  expect(order.body.delivery).toMatchObject({ name: receiver.name, phone: receiver.phone, province_code: "1", ward: "Phường Hoàn Kiếm", address_line: "12 Đinh Tiên Hoàng, căn hộ 4", latitude: 21.028511, longitude: 105.804817, location_mode: "current" });
+  expect(order.body.delivery).toMatchObject({ name: receiver.name, phone: receiver.phone, province_code: "1", ward: "Phường Hoàn Kiếm", address_line: "12 Đinh Tiên Hoàng, căn hộ 4", latitude: 21.028511, longitude: 105.804817, location_mode: "current", carrier_province_id: 1, carrier_district_id: 100, carrier_ward_code: "gps-100" });
   await expect(page).toHaveURL(new RegExp(`#live/${roomID}$`));
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   expect(errors).toEqual([]);
@@ -570,6 +584,7 @@ test("seller defaults to the broadcast location and saves it before requesting m
   const origin = page.getByRole("dialog", { name: "Nơi lấy hàng của phiên live", exact: true });
   await expect(origin.getByRole("radio", { name: "Sử dụng vị trí hiện tại", exact: true })).toBeChecked();
   await expect(origin.getByLabel("Địa chỉ cụ thể", { exact: true })).toHaveValue("12 Đinh Tiên Hoàng");
+  await chooseCarrier(origin, "1", "gps-100");
   await origin.getByRole("button", { name: "Dùng địa chỉ và bắt đầu phát", exact: true }).click();
   await expect(origin).not.toBeVisible();
   await expect(page.getByRole("alert")).toContainText("LiveKit");
@@ -592,6 +607,7 @@ test("geocoder failure blocks current-location checkout and allows explicit manu
   await expect(checkout.getByRole("button", { name: "Xác nhận đặt hàng", exact: true })).toBeDisabled();
   await expect(checkout.getByLabel("Họ tên người nhận", { exact: true })).toHaveValue(receiver.name);
   await checkout.getByRole("radio", { name: "Nhập địa chỉ", exact: true }).check();
+  await chooseCarrier(checkout);
   await checkout.getByRole("button", { name: "Xác nhận đặt hàng", exact: true }).click();
   await expect(checkout).not.toBeVisible();
   expect(writes.find((entry) => entry.path === "/api/orders").body.delivery).toMatchObject({ ...receiver, location_mode: "manual" });
@@ -606,6 +622,7 @@ test("late GPS callbacks cannot replace a manually entered address", async ({ pa
   await fillDelivery(checkout);
   await checkout.getByRole("radio", { name: "Sử dụng vị trí hiện tại", exact: true }).check();
   await checkout.getByRole("radio", { name: "Nhập địa chỉ", exact: true }).check();
+  await chooseCarrier(checkout);
   await checkout.getByLabel("Địa chỉ cụ thể", { exact: true }).fill("99 Địa chỉ nhập tay");
   await page.evaluate(() => window.pendingGPS({ coords: { latitude: 21.028511, longitude: 105.804817 } }));
   await checkout.getByRole("button", { name: "Xác nhận đặt hàng", exact: true }).click();
@@ -614,55 +631,51 @@ test("late GPS callbacks cannot replace a manually entered address", async ({ pa
   expect(writes.find((entry) => entry.path === "/api/orders").body.delivery).toMatchObject({ address_line: "99 Địa chỉ nhập tay", latitude: null, longitude: null, location_mode: "manual" });
 });
 
-test("a shop without shipping setup cannot produce a fake zero-fee order", async ({ page }) => {
+test("a carrier failure cannot produce a fake zero-fee order", async ({ page }) => {
   const writes = await mockAPI(page, false, true);
   await page.route("**/api/orders/quote", (route) => route.fulfill({
-    status: 409, contentType: "application/json", body: JSON.stringify({ error: "shipping_not_configured" }),
+    status: 409, contentType: "application/json", body: JSON.stringify({ error: "shipping_unavailable" }),
   }));
   await page.goto(`/#live/${roomID}`);
   await page.getByRole("button", { name: "Chọn mua", exact: true }).click();
   const checkout = page.getByRole("dialog", { name: "Đặt hàng", exact: true });
   await fillDelivery(checkout);
-  await expect(checkout.getByRole("alert")).toContainText("Shop chưa thiết lập");
+  await expect(checkout.getByRole("alert")).toContainText("Chưa lấy được báo phí");
   await expect(checkout.getByRole("button", { name: "Xác nhận đặt hàng" })).toBeDisabled();
   expect(writes.filter((write) => write.path === "/api/orders")).toHaveLength(0);
 });
 
-test("province quotes shipping before contact details and offers local ward suggestions", async ({ page }) => {
+test("carrier route quotes before contact details and contact edits keep the quote", async ({ page }) => {
   const writes = await mockAPI(page, false, true);
   await page.goto(`/#live/${roomID}`);
   await page.getByRole("button", { name: "Chọn mua", exact: true }).click();
   const checkout = page.getByRole("dialog", { name: "Đặt hàng", exact: true });
-  await expect(checkout.getByLabel("Phường / Xã", { exact: true })).toBeDisabled();
   await checkout.getByLabel("Tỉnh / Thành phố", { exact: true }).selectOption("1");
+  await chooseCarrier(checkout);
   await expect(checkout.getByLabel("Chi tiết thanh toán")).toContainText("25.000");
-  await expect(checkout.locator('datalist option[value="Phường Ba Đình"]')).toHaveCount(1);
   await expect(checkout.getByRole("button", { name: "Xác nhận đặt hàng", exact: true })).toBeDisabled();
-  await checkout.getByLabel("Phường / Xã", { exact: true }).fill("Phường Ba Đình");
   await checkout.getByLabel("Tỉnh / Thành phố", { exact: true }).selectOption("79");
-  await expect(checkout.getByLabel("Phường / Xã", { exact: true })).toHaveValue("");
-  await expect(checkout.locator('datalist option[value="Phường Sài Gòn"]')).toHaveCount(1);
+  await chooseCarrier(checkout, "79", "gps-7900");
   await expect(checkout.getByLabel("Chi tiết thanh toán")).toContainText("40.000");
   const before = writes.filter((entry) => entry.path === "/api/orders/quote").length;
   await checkout.getByLabel("Họ tên người nhận", { exact: true }).fill(receiver.name);
   await checkout.getByLabel("Số điện thoại", { exact: true }).fill("123");
   await expect(checkout.getByText("Nhập số điện thoại Việt Nam bắt đầu bằng 0 hoặc +84.", { exact: true })).toBeVisible();
   await checkout.getByLabel("Số điện thoại", { exact: true }).fill(receiver.phone);
-  await checkout.getByLabel("Phường / Xã", { exact: true }).fill("Phường Sài Gòn");
   await checkout.getByLabel("Địa chỉ cụ thể", { exact: true }).fill(receiver.address_line);
   await page.waitForTimeout(500);
   expect(writes.filter((entry) => entry.path === "/api/orders/quote")).toHaveLength(before);
   await checkout.getByRole("button", { name: "Xác nhận đặt hàng", exact: true }).click();
   await expect(checkout).not.toBeVisible();
-  expect(writes.find((entry) => entry.path === "/api/orders").body).toMatchObject({ expected_total: 120000, delivery: { province_code: "79", ward: "Phường Sài Gòn" } });
+  expect(writes.find((entry) => entry.path === "/api/orders").body).toMatchObject({ expected_total: 120000, delivery: { province_code: "79", ward: "Phường Sài Gòn", carrier_district_id: 7900, carrier_ward_code: "gps-7900" } });
 });
 
-test("first-time seller must enter both shipping fees before starting media", async ({ page }) => {
+test("first-time seller saves a pickup without entering or sending fees", async ({ page }) => {
   const writes = await mockAPI(page, true);
   const saved = [];
   await page.addInitScript(() => { navigator.geolocation.getCurrentPosition = (_success, failure) => failure({ code: 1 }); });
   await page.route(`**/api/livestreams/${roomID}/pickup`, (route) => {
-    if (route.request().method() === "GET") return route.fulfill({ contentType: "application/json", body: JSON.stringify({ pickup_address: receiver, shipping_configured: false, shipping_rates: null }) });
+    if (route.request().method() === "GET") return route.fulfill({ contentType: "application/json", body: JSON.stringify({ pickup_address: receiver, shipping_configured: false, quote_only: true }) });
     saved.push(route.request().postDataJSON());
     return route.fulfill({ contentType: "application/json", body: JSON.stringify({ pickup_address: saved.at(-1).pickup_address }) });
   });
@@ -670,41 +683,37 @@ test("first-time seller must enter both shipping fees before starting media", as
   await page.getByRole("button", { name: "Bắt đầu phát", exact: true }).click();
   const origin = page.getByRole("dialog", { name: "Nơi lấy hàng của phiên live", exact: true });
   await origin.getByRole("radio", { name: "Nhập địa chỉ", exact: true }).check();
-  const submit = origin.getByRole("button", { name: "Dùng địa chỉ và bắt đầu phát", exact: true });
-  await expect(submit).toBeDisabled();
-  await origin.getByLabel("Phí ship nội tỉnh (VNĐ)", { exact: true }).fill("25000");
-  await expect(submit).toBeDisabled();
-  expect(writes.some((entry) => entry.path.endsWith("/media-token"))).toBe(false);
-  await origin.getByLabel("Phí ship liên tỉnh (VNĐ)", { exact: true }).fill("40000");
-  await submit.click();
+  await chooseCarrier(origin);
+  await expect(origin.getByLabel("Phí ship nội tỉnh (VNĐ)", { exact: true })).toHaveCount(0);
+  await origin.getByRole("button", { name: "Dùng địa chỉ và bắt đầu phát", exact: true }).click();
   await expect(origin).not.toBeVisible();
   await expect(page.getByRole("alert")).toContainText("LiveKit");
   expect(saved).toHaveLength(1);
-  expect(saved[0].shipping_rates).toEqual({ same_province_fee: 25000, other_province_fee: 40000, free_shipping_from: null });
+  expect(Object.keys(saved[0])).toEqual(["pickup_address"]);
+  expect(writes.some((entry) => /create|shipment|booking/.test(entry.path))).toBe(false);
 });
 
-test("seller fixes missing shipping inside an existing room and buyer retries successfully", async ({ page, context }) => {
+test("seller fixes a pickup inside the room and buyer retrieves a carrier quote", async ({ page, context }) => {
   const sellerWrites = await mockAPI(page, true);
-  let rates = null;
+  let configured = false;
   await page.route(`**/api/livestreams/${roomID}/pickup`, (route) => {
-    if (route.request().method() === "GET") return route.fulfill({ contentType: "application/json", body: JSON.stringify({ pickup_address: receiver, shipping_configured: Boolean(rates), shipping_rates: rates }) });
-    const input = route.request().postDataJSON(); rates = input.shipping_rates;
-    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ pickup_address: input.pickup_address }) });
+    if (route.request().method() === "GET") return route.fulfill({ contentType: "application/json", body: JSON.stringify({ pickup_address: receiver, shipping_configured: configured, quote_only: true }) });
+    configured = true;
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ pickup_address: route.request().postDataJSON().pickup_address }) });
   });
   const buyer = await context.newPage();
   const buyerWrites = await mockAPI(buyer, false, true);
-  await buyer.route("**/api/orders/quote", (route) => route.fulfill({ status: rates ? 200 : 409, contentType: "application/json", body: JSON.stringify(rates ? { unit_price: 80000, quantity: 1, items_subtotal: 80000, shipping_fee: rates.same_province_fee, total_amount: 80000 + rates.same_province_fee, currency: "VND", pickup_province: "Thành phố Hà Nội" } : { error: "shipping_not_configured" }) }));
+  await buyer.route("**/api/orders/quote", (route) => route.fulfill({ status: configured ? 200 : 409, contentType: "application/json", body: JSON.stringify(configured ? { unit_price: 80000, quantity: 1, items_subtotal: 80000, shipping_fee: 25000, total_amount: 105000, currency: "VND", pickup_province: "Thành phố Hà Nội", shipping: {provider:"ghn",environment:"staging",quote_only:true} } : { error: "shipping_pickup_required" }) }));
   await buyer.goto(`/#live/${roomID}`);
   await buyer.getByRole("button", { name: "Chọn mua", exact: true }).click();
   const checkout = buyer.getByRole("dialog", { name: "Đặt hàng", exact: true });
   await fillDelivery(checkout);
-  await expect(checkout.getByRole("alert")).toContainText("Shop chưa thiết lập");
+  await expect(checkout.getByRole("alert")).toContainText("chưa lưu địa chỉ lấy hàng");
   await page.goto(`/#live/${roomID}`);
   const player = await page.locator(".live-video").elementHandle();
   await page.getByRole("button", { name: "Cài đặt giao hàng", exact: true }).click();
   const settings = page.getByRole("dialog", { name: "Nơi lấy hàng của phiên live", exact: true });
-  await settings.getByLabel("Phí ship nội tỉnh (VNĐ)", { exact: true }).fill("25000");
-  await settings.getByLabel("Phí ship liên tỉnh (VNĐ)", { exact: true }).fill("40000");
+  await chooseCarrier(settings);
   await settings.getByRole("button", { name: "Lưu cài đặt giao hàng", exact: true }).click();
   await expect(settings).not.toBeVisible();
   expect(await player.evaluate((element) => element.isConnected)).toBe(true);
@@ -715,6 +724,46 @@ test("seller fixes missing shipping inside an existing room and buyer retries su
   await expect(checkout).not.toBeVisible();
   expect(buyerWrites.find((entry) => entry.path === "/api/orders").body.expected_total).toBe(105000);
   await expect(buyer).toHaveURL(new RegExp(`#live/${roomID}$`));
+});
+
+test("missing carrier configuration does not allow a local order or invented fee", async ({ page }) => {
+  const writes = await mockAPI(page, false, true);
+  await page.route("**/api/shipping/provinces", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "shipping_provider_not_configured" }) }));
+  await page.goto(`/#live/${roomID}`);
+  await page.getByRole("button", { name: "Chọn mua", exact: true }).click();
+  const checkout = page.getByRole("dialog", { name: "Đặt hàng", exact: true });
+  await checkout.getByLabel("Họ tên người nhận", { exact: true }).fill(receiver.name);
+  await checkout.getByLabel("Số điện thoại", { exact: true }).fill(receiver.phone);
+  await checkout.getByLabel("Tỉnh / Thành phố", { exact: true }).selectOption("1");
+  await checkout.getByLabel("Phường / Xã", { exact: true }).fill(receiver.ward);
+  await checkout.getByLabel("Địa chỉ cụ thể", { exact: true }).fill(receiver.address_line);
+  await expect(checkout.getByText(/Hệ thống báo phí vận chuyển chưa được cấu hình/)).toBeVisible();
+  await expect(checkout.getByRole("button", { name: "Xác nhận đặt hàng", exact: true })).toBeDisabled();
+  expect(writes.some((entry) => entry.path === "/api/orders" || entry.path === "/api/orders/quote")).toBe(false);
+});
+
+test("seller edits parcel metadata without a shipping-fee input", async ({ page }) => {
+  await mockAPI(page, true);
+  const edits = [];
+  await page.route(`**/api/products/${productID}`, (route) => {
+    edits.push(route.request().postDataJSON());
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ id: productID, ...edits.at(-1) }) });
+  });
+  await page.goto("/#seller");
+  await page.getByRole("button", { name: "Sửa", exact: true }).click();
+  const editor = page.getByRole("dialog", { name: "Sửa sản phẩm", exact: true });
+  await expect(editor.getByLabel("Phí ship nội tỉnh (VNĐ)", { exact: true })).toHaveCount(0);
+  await editor.getByLabel("Khối lượng (gram)", { exact: true }).fill("0");
+  await editor.getByLabel("Chiều dài (cm)", { exact: true }).fill("20");
+  await editor.getByLabel("Chiều rộng (cm)", { exact: true }).fill("15");
+  await editor.getByLabel("Chiều cao (cm)", { exact: true }).fill("10");
+  await editor.getByRole("button", { name: "Xác nhận", exact: true }).click();
+  expect(edits).toHaveLength(0);
+  await editor.getByLabel("Khối lượng (gram)", { exact: true }).fill("750");
+  await editor.getByRole("button", { name: "Xác nhận", exact: true }).click();
+  await expect(editor).not.toBeVisible();
+  expect(edits).toHaveLength(1);
+  expect(edits[0].parcel).toEqual({ weight_grams: 750, length_cm: 20, width_cm: 15, height_cm: 10 });
 });
 
 test("a changed shipping quote requires a second confirmation and preserves the request key", async ({ page }) => {

@@ -412,7 +412,7 @@ export function LiveVideo({
         const start = pickupOpen === "start";
         setPickupOpen(false);
         if (start) withAccount(connect);
-        else setPickupFeedback("Đã lưu giao hàng. Người xem có thể thử tính lại phí ship và đặt hàng.");
+        else setPickupFeedback("Đã lưu nơi lấy hàng. Người xem có thể lấy lại báo phí vận chuyển.");
       }} />}
     </div>
   );

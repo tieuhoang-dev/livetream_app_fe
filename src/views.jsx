@@ -1120,6 +1120,7 @@ function OrderDetail({ api, path, refresh, reload, close, seller, notice }) {
               </section>
             ) : <p className="payment-note">Đơn cũ chưa có thông tin giao hàng.</p>}
             {order.items_subtotal != null && <div className="checkout-breakdown"><div><span>Tiền hàng</span><strong>{money(order.items_subtotal)}</strong></div><div><span>Phí vận chuyển</span><strong>{order.shipping_fee === 0 ? "Miễn phí" : money(order.shipping_fee)}</strong></div></div>}
+            {order.delivery?.shipping?.provider && <p className="payment-note">Báo phí {order.delivery.shipping.provider.toUpperCase()} · {order.delivery.shipping.environment === "staging" ? "thử nghiệm" : "báo giá"}. Đơn này chỉ được lưu trong ứng dụng, chưa có vận đơn.</p>}
             <div className="checkout-total">
               <span>Tổng tiền</span>
               <strong>{money(order.total_amount)}</strong>
@@ -1429,6 +1430,7 @@ function SellerEditor({ editor, api, mode, session, close, done }) {
         };
         if (!body.name) throw new Error("Nhập tên sản phẩm.");
         if (!product) body.stock_quantity = Number(form.get("stock_quantity"));
+        body.parcel = { weight_grams: Number(form.get("weight_grams")), length_cm: Number(form.get("length_cm")), width_cm: Number(form.get("width_cm")), height_cm: Number(form.get("height_cm")) };
         await api(path, { method: product ? "PATCH" : "POST", body });
       } else if (kind === "stock") {
         const delta = Number(form.get("delta"));
@@ -1506,6 +1508,16 @@ function SellerEditor({ editor, api, mode, session, close, done }) {
                 />
               </label>
             )}
+            <fieldset className="delivery-fields">
+              <legend>Kiện đóng gói cho 1 sản phẩm</legend>
+              <p className="payment-note">Dùng để báo phí GHN. Khi mua nhiều sản phẩm, hệ thống cộng khối lượng và tính chiều cao xếp chồng.</p>
+              <div className="form-columns">
+                <label>Khối lượng (gram)<input name="weight_grams" type="number" min="1" max="1000000" step="1" required defaultValue={product?.parcel?.weight_grams || ""} /></label>
+                <label>Chiều dài (cm)<input name="length_cm" type="number" min="1" max="300" step="1" required defaultValue={product?.parcel?.length_cm || ""} /></label>
+                <label>Chiều rộng (cm)<input name="width_cm" type="number" min="1" max="300" step="1" required defaultValue={product?.parcel?.width_cm || ""} /></label>
+                <label>Chiều cao (cm)<input name="height_cm" type="number" min="1" max="300" step="1" required defaultValue={product?.parcel?.height_cm || ""} /></label>
+              </div>
+            </fieldset>
             <label>
               Đường dẫn ảnh
               <input

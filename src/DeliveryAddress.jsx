@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import provinces from "./provinces.json";
 import "leaflet/dist/leaflet.css";
+import { CarrierLocationFields } from "./CarrierLocationFields";
 
 export const emptyAddress = {
   name: "", phone: "", province_code: "", ward: "", address_line: "",
@@ -9,8 +10,9 @@ export const emptyAddress = {
 function phoneReady(phone) {
   return /^(0[0-9]{9,10}|\+84[0-9]{9,10})$/.test(String(phone || "").replace(/[ .-]/g, ""));
 }
-export function shippingAreaReady(value) {
+export function shippingAreaReady(value, carrier = false) {
   return provinces.some((province) => province.code === value.province_code) &&
+    (!carrier || (value.carrier_province_id > 0 && value.carrier_district_id > 0 && Boolean(value.carrier_ward_code))) &&
     (value.location_mode !== "current" || (value.latitude != null && value.longitude != null));
 }
 export function addressMissingFields(value) {
@@ -35,11 +37,22 @@ export function AddressFields({ api, value, onChange, disabled, pickup = false, 
   const [error, setError] = useState("");
   const [mode, setMode] = useState(autoLocate ? "current" : value.location_mode || "manual");
   const [wards, setWards] = useState([]);
+  const [carrierProvinces, setCarrierProvinces] = useState([]);
+  const [carrierError, setCarrierError] = useState("");
+  const matchedCarrierProvinces = carrierProvinces.filter((p) => p.province_code === value.province_code);
   const latest = useRef({ value, onChange, disabled });
   latest.current = { value, onChange, disabled };
   const generation = useRef(0);
   const controller = useRef(null);
   const id = useId();
+  useEffect(() => {
+    if (api.mode === "demo") return;
+    const controller = new AbortController();
+    api("/api/shipping/provinces", { signal: controller.signal }).then((result) => {
+      if (!controller.signal.aborted) setCarrierProvinces(result.data || []);
+    }).catch((err) => { if (!controller.signal.aborted) setCarrierError(err.message); });
+    return () => controller.abort();
+  }, [api]);
   useEffect(() => {
     let active = true;
     setWards([]);
@@ -58,7 +71,7 @@ export function AddressFields({ api, value, onChange, disabled, pickup = false, 
     controller.current = new AbortController();
     setMode("current"); setLocating(true); setError("");
     const current = latest.current;
-    current.onChange({ ...current.value, location_mode: "current", latitude: null, longitude: null });
+    current.onChange({ ...current.value, location_mode: "current", latitude: null, longitude: null, carrier_province_id: 0, carrier_district_id: 0, carrier_ward_code: "" });
     return { attempt, signal: controller.current.signal };
   }
   async function resolvePoint(latitude, longitude, request) {
@@ -122,17 +135,19 @@ export function AddressFields({ api, value, onChange, disabled, pickup = false, 
             setMode("manual");
             setError("");
             const code = event.target.value;
-            onChange({ ...value, province_code: code, province_name: provinces.find((p) => p.code === code)?.name || "", ward: code === value.province_code ? value.ward : "", location_mode: "manual", latitude: null, longitude: null });
+            onChange({ ...value, province_code: code, province_name: provinces.find((p) => p.code === code)?.name || "", ward: code === value.province_code ? value.ward : "", location_mode: "manual", latitude: null, longitude: null, carrier_province_id: 0, carrier_district_id: 0, carrier_ward_code: "" });
           }} disabled={locating} required>
             <option value="">Chọn tỉnh / thành phố</option>
             {provinces.map((province) => <option key={province.code} value={province.code}>{province.name}</option>)}
           </select>
         </label>
-        <label>Phường / Xã
+        {!matchedCarrierProvinces.length && <label>Phường / Xã
           <input aria-label="Phường / Xã" list={`${id}-wards`} autoComplete="off" value={value.ward || ""} onChange={update("ward")} disabled={locating || !value.province_code} placeholder={value.province_code ? "Gõ tên để chọn phường/xã" : "Chọn tỉnh/thành trước"} maxLength={100} required />
           <datalist id={`${id}-wards`}>{wards.map((name) => <option key={name} value={name} />)}</datalist>
-        </label>
+        </label>}
       </div>
+      {matchedCarrierProvinces.length > 0 && <CarrierLocationFields {...{ api, value, onChange, pickup }} provinces={matchedCarrierProvinces} disabled={disabled || locating} />}
+      {carrierError && <p className="payment-note">{carrierError}</p>}
       <label>Địa chỉ cụ thể
         <input autoComplete="shipping street-address" placeholder="Số nhà, tên đường, tòa nhà…" value={value.address_line || ""} onChange={update("address_line")} disabled={locating} maxLength={255} required />
       </label>
