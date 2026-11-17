@@ -1490,6 +1490,13 @@ dialog::backdrop {
 .address-options label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .address-options input[type="radio"] { width: 16px; height: 16px; min-height: 0; margin: 0; accent-color: #fe2c55; }
 .delivery-map-panel { display: grid; gap: 10px; }
+.nearby-stations { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; min-width: 0; }
+.nearby-stations .payment-note, .station-card p { margin: 0; }
+.station-results { display: grid; gap: 10px; max-height: 320px; overflow: auto; }
+.station-card { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--pale); overflow-wrap: anywhere; font-size: 13px; }
+.station-card > span, .station-card small { color: var(--muted); }
+.station-card .inline-actions { flex-wrap: wrap; }
+.station-pin span { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: #f97316; color: white; font-size: 12px; font-weight: 700; box-shadow: 0 2px 8px #0004; border: 2px solid white; }
 .delivery-pin { display: grid; place-items: center; color: #fe2c55; background: white; border: 3px solid #fe2c55; border-radius: 50%; box-shadow: 0 2px 8px #0005; }
 .delivery-pin span { font-size: 12px; line-height: 1; }
 .checkout-breakdown { display: grid; gap: 8px; padding-top: 10px; font-size: 13px; }

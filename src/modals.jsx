@@ -299,6 +299,7 @@ export function CheckoutModal({ api, product, live, close, onOrder, initialDeliv
         <p className="payment-note" id="checkout-payment-note">{paymentMethod === "bank_transfer" ? "Liên hệ người bán để nhận thông tin chuyển khoản cho đơn hàng." : "Thanh toán khi bạn nhận được hàng."}</p>
         {quote && <p className="payment-note">Lấy hàng tại {quote.pickup_province}. {quote.shipping?.provider === "ghn" ? `Báo phí GHN${quote.shipping.environment === "staging" ? " · môi trường thử nghiệm" : ""}.` : "Phí vận chuyển minh họa trong bản mẫu."}</p>}
         {quote?.shipping?.parcel && <p className="payment-note">Kiện dự tính: {quote.shipping.parcel.weight_grams} g · {quote.shipping.parcel.length_cm} × {quote.shipping.parcel.width_cm} × {quote.shipping.parcel.height_cm} cm.</p>}
+        {quote?.shipping?.origin_type === "station_dropoff" && <p className="payment-note">Phí tính từ {quote.shipping.station_name}; người bán tự mang hàng ra bưu cục.</p>}
         <div className="checkout-breakdown" aria-label="Chi tiết thanh toán">
           <div><span>Tiền hàng</span><strong>{quote ? money(quote.items_subtotal) : "Chưa tính"}</strong></div>
           <div><span>Phí vận chuyển</span><strong>{quote ? (quote.shipping_fee === 0 ? "Miễn phí" : money(quote.shipping_fee)) : "Chưa tính"}</strong></div>

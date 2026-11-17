@@ -126,3 +126,16 @@ Kênh này công khai, chỉ đọc, không cần đăng nhập và không thay 
 `/api/auth/ws`. API chi tiết live, sản phẩm, đơn và media token vẫn dùng REST.
 Cần cập nhật backend PR #13 cùng FE này; reverse proxy/tunnel phải hỗ trợ
 WebSocket Upgrade. Vite đã proxy `/api` với `ws: true`.
+
+Trong bước bắt đầu phát hoặc Cài đặt giao hàng, chọn **Tìm bưu cục GHN gần vị
+trí này** để xem danh sách và ghim bưu cục theo quận/huyện GHN. GPS tự điền khu
+vực khi tên khớp chắc chắn; có thể chọn khu vực thủ công. Khoảng cách là đường
+chim bay trong phạm vi tra cứu, không bảo đảm gần nhất ngoài khu vực. Chọn
+bưu cục nếu người bán tự mang hàng ra gửi; backend kiểm tra lại bưu cục và lấy
+báo phí theo khu vực bưu cục đó. Khoảng cách chỉ dùng xếp hạng, không dùng để
+nhân ra phí ship. Người mua vẫn ở trong live sau khi đặt hàng.
+
+Tra bưu cục cần quyền GHN phù hợp; một số tài khoản yêu cầu captcha/mở quyền.
+Giao diện báo rõ và vẫn cho dùng địa chỉ lấy hàng khi chưa tra được. Dữ liệu
+thử nghiệm ghi nhãn staging; không tự tạo vận đơn hoặc hẹn lấy hàng. Kiểm thử
+UI dùng danh mục/bưu cục và báo phí giả lập, chưa gọi tài khoản GHN thật.

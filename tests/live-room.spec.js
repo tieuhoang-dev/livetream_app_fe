@@ -801,3 +801,88 @@ test("a changed shipping quote requires a second confirmation and preserves the 
   expect(attempts[1].expected_total).toBe(110000);
   expect(attempts[1].note).toBe("Gọi trước khi giao");
 });
+
+const stationPickup = { ...receiver, station_id: 1888, station_name: "GHN Điểm gần", location_mode: "manual", latitude: 21.029, longitude: 105.805, ward: "Phường Hoàn Kiếm", carrier_ward_code: "gps-100", address_line: "10 Đường bưu cục" };
+const nearbyStationResult = { district: "Khu vực kiểm tra", complete: true, environment: "staging", quote_only: true, data: [
+  { id: 1888, name: "GHN Điểm gần", address: stationPickup.address_line, latitude: stationPickup.latitude, longitude: stationPickup.longitude, distance_meters: 60, pickup_address: stationPickup },
+  { id: 1889, name: "GHN Điểm xa", address: "Đường xa", latitude: 21.04, longitude: 105.81, distance_meters: 1300, pickup_address: { ...stationPickup, station_id: 1889, station_name: "GHN Điểm xa", address_line: "Đường xa", latitude: 21.04, longitude: 105.81 } },
+  { id: 1890, name: "GHN Chưa ánh xạ", address: "Chưa xác định", distance_meters: null },
+] };
+async function carrierGPS(page) {
+  await page.route("**/api/delivery/reverse-geocode", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ address: { ...receiver, ...route.request().postDataJSON(), location_mode: "current", province_name: "Thành phố Hà Nội", carrier_ward_code: "gps-100", ward: "Phường Hoàn Kiếm", address_line: "12 Đinh Tiên Hoàng" } }) }));
+}
+
+test("seller selects a nearby GHN station and buyer keeps the live after a station quote", async ({ page, context }, testInfo) => {
+  const errors = collectErrors(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await context.grantPermissions(["geolocation"]); await context.setGeolocation({ latitude: 21.028511, longitude: 105.804817 });
+  const writes = await mockAPI(page, true); await carrierGPS(page);
+  const searches = [];
+  await page.route("**/api/shipping/stations/nearby", (route) => { searches.push(route.request().postDataJSON()); return route.fulfill({ contentType: "application/json", body: JSON.stringify(nearbyStationResult) }); });
+  await page.goto(`/#live/${roomID}`);
+  const player = await page.locator(".live-video").elementHandle();
+  await page.getByRole("button", { name: "Cài đặt giao hàng", exact: true }).click();
+  const origin = page.getByRole("dialog", { name: "Nơi lấy hàng của phiên live", exact: true });
+  await origin.getByRole("radio", { name: "Sử dụng vị trí hiện tại", exact: true }).check();
+  const search = origin.getByRole("button", { name: "Tìm bưu cục GHN gần vị trí này", exact: true });
+  await expect(search).toBeEnabled(); await search.click();
+  await expect(origin.getByRole("region", { name: "Bản đồ chọn địa chỉ" })).toBeVisible();
+  await expect(origin.locator(".station-pin")).toHaveCount(2);
+  await expect(origin.getByRole("button", { name: "Chọn bưu cục GHN Chưa ánh xạ", exact: true })).toBeDisabled();
+  expect(searches).toEqual([{ latitude: 21.028511, longitude: 105.804817, carrier_province_id: 1, carrier_district_id: 100 }]);
+  expect(writes.some((entry) => entry.path.endsWith("/pickup") && entry.method === "PUT")).toBe(false);
+  await page.screenshot({ path: testInfo.outputPath("station-picker.png"), fullPage: true });
+  await origin.getByRole("button", { name: "Chọn bưu cục GHN Điểm gần", exact: true }).click();
+  await expect(origin.getByLabel("Người liên hệ", { exact: true })).toHaveValue("Chủ shop");
+  await expect(origin.getByLabel("Địa chỉ cụ thể", { exact: true })).toHaveValue(stationPickup.address_line);
+  await expect(origin.getByRole("status")).toContainText("Điểm gửi đã chọn: GHN Điểm gần");
+  await origin.getByRole("button", { name: "Lưu cài đặt giao hàng", exact: true }).click();
+  await expect(origin).not.toBeVisible();
+  expect(writes.find((entry) => entry.path.endsWith("/pickup") && entry.method === "PUT").body.pickup_address).toMatchObject({ station_id: 1888, station_name: "GHN Điểm gần", latitude: stationPickup.latitude, longitude: stationPickup.longitude, name: "Chủ shop", phone: receiver.phone });
+  expect(await player.evaluate((element) => element.isConnected)).toBe(true);
+  expect(writes.some((entry) => entry.path.endsWith("/media-token"))).toBe(false);
+  const buyer = await context.newPage();
+  const buyerWrites = await mockAPI(buyer, false, true);
+  await buyer.route("**/api/orders/quote", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ unit_price: 80000, quantity: 1, items_subtotal: 80000, shipping_fee: 19000, total_amount: 99000, currency: "VND", pickup_province: "Thành phố Hà Nội", shipping: { provider: "ghn", environment: "staging", origin_type: "station_dropoff", station_id: 1888, station_name: "GHN Điểm gần", quote_only: true } }) }));
+  await buyer.goto(`/#live/${roomID}`); await buyer.getByRole("button", { name: "Chọn mua", exact: true }).click();
+  const checkout = buyer.getByRole("dialog", { name: "Đặt hàng", exact: true }); await fillDelivery(checkout);
+  await expect(checkout.getByText("Phí tính từ GHN Điểm gần; người bán tự mang hàng ra bưu cục.", { exact: true })).toBeVisible();
+  await checkout.getByRole("button", { name: "Xác nhận đặt hàng", exact: true }).click(); await expect(checkout).not.toBeVisible();
+  expect(buyerWrites.find((entry) => entry.path === "/api/orders").body.expected_total).toBe(99000);
+  await expect(buyer).toHaveURL(new RegExp(`#live/${roomID}$`));
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true); expect(errors).toEqual([]);
+});
+
+test("GHN station access failure preserves the manual pickup fallback", async ({ page, context }) => {
+  await context.grantPermissions(["geolocation"]); await context.setGeolocation({ latitude: 21.028511, longitude: 105.804817 });
+  const writes = await mockAPI(page, true); await carrierGPS(page);
+  await page.route("**/api/shipping/stations/nearby", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "shipping_stations_access_required" }) }));
+  await page.goto(`/#live/${roomID}`); await page.getByRole("button", { name: "Cài đặt giao hàng", exact: true }).click();
+  const origin = page.getByRole("dialog", { name: "Nơi lấy hàng của phiên live", exact: true });
+  await origin.getByRole("radio", { name: "Sử dụng vị trí hiện tại", exact: true }).check();
+  const search = origin.getByRole("button", { name: "Tìm bưu cục GHN gần vị trí này", exact: true }); await expect(search).toBeEnabled(); await search.click();
+  await expect(origin.getByRole("alert")).toContainText("Tài khoản GHN chưa có quyền tra bưu cục");
+  await origin.getByRole("radio", { name: "Nhập địa chỉ", exact: true }).check();
+  await origin.getByLabel("Địa chỉ cụ thể", { exact: true }).fill("Địa chỉ lấy hàng trực tiếp");
+  await origin.getByRole("button", { name: "Lưu cài đặt giao hàng", exact: true }).click(); await expect(origin).not.toBeVisible();
+  const saved = writes.find((entry) => entry.path.endsWith("/pickup") && entry.method === "PUT").body.pickup_address;
+  expect(saved.station_id || 0).toBe(0); expect(saved.address_line).toBe("Địa chỉ lấy hàng trực tiếp");
+});
+
+test("late station results cannot replace a new search district", async ({ page, context }) => {
+  await context.grantPermissions(["geolocation"]); await context.setGeolocation({ latitude: 21.028511, longitude: 105.804817 });
+  await mockAPI(page, true); await carrierGPS(page);
+  let finish, started = false; const pending = new Promise((resolve) => { finish = resolve; });
+  await page.route("**/api/shipping/stations/nearby", async (route) => { started = true; await pending; await route.fulfill({ contentType: "application/json", body: JSON.stringify(nearbyStationResult) }).catch(() => {}); });
+  await page.goto(`/#live/${roomID}`); await page.getByRole("button", { name: "Cài đặt giao hàng", exact: true }).click();
+  const origin = page.getByRole("dialog", { name: "Nơi lấy hàng của phiên live", exact: true });
+  await origin.getByRole("radio", { name: "Sử dụng vị trí hiện tại", exact: true }).check();
+  const search = origin.getByRole("button", { name: "Tìm bưu cục GHN gần vị trí này", exact: true }); await expect(search).toBeEnabled(); await search.click();
+  await expect.poll(() => started).toBe(true);
+  await origin.getByLabel("Tỉnh / Thành phố", { exact: true }).selectOption("79");
+  await origin.getByLabel("Quận / Huyện (GHN)", { exact: true }).selectOption("7900"); finish();
+  await expect(search).toBeEnabled();
+  await expect(origin.getByRole("button", { name: "Chọn bưu cục GHN Điểm gần", exact: true })).toHaveCount(0);
+  await expect(origin.getByLabel("Tỉnh / Thành phố", { exact: true })).toHaveValue("79");
+  await expect(origin.getByLabel("Quận / Huyện (GHN)", { exact: true })).toHaveValue("7900");
+});

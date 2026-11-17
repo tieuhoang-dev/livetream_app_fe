@@ -41,17 +41,17 @@ export function CarrierLocationFields({ api, value, onChange, provinces, disable
   return <div className="carrier-location-fields">
     <p className="payment-note">Chọn khu vực theo danh mục GHN để lấy báo phí. Tên khu vực có thể theo địa giới trước sáp nhập.</p>
     {provinces.length > 1 && <label>Khu vực {pickup ? "lấy" : "nhận"} hàng
-      <select aria-label="Khu vực GHN" value={value.carrier_province_id || ""} disabled={disabled} required onChange={(event) => onChange({ ...value, carrier_province_id: Number(event.target.value), carrier_district_id: 0, carrier_ward_code: "", ward: "" })}>
+      <select aria-label="Khu vực GHN" value={value.carrier_province_id || ""} disabled={disabled} required onChange={(event) => onChange({ ...value, station_id: 0, station_name: "", carrier_province_id: Number(event.target.value), carrier_district_id: 0, carrier_ward_code: "", ward: "" })}>
         <option value="">Chọn khu vực</option>{provinces.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
       </select>
     </label>}
     <div className="form-columns">
-      <label>Quận / Huyện (GHN)<select aria-label="Quận / Huyện (GHN)" value={value.carrier_district_id || ""} disabled={disabled || !districts.length} required onChange={(event) => onChange({ ...value, carrier_district_id: Number(event.target.value), carrier_ward_code: "", ward: "" })}>
+      <label>Quận / Huyện (GHN)<select aria-label="Quận / Huyện (GHN)" value={value.carrier_district_id || ""} disabled={disabled || !districts.length} required onChange={(event) => onChange({ ...value, station_id: 0, station_name: "", carrier_district_id: Number(event.target.value), carrier_ward_code: "", ward: "" })}>
         <option value="">Chọn quận/huyện</option>{districts.filter(supports).map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
       </select></label>
       <label>Phường / Xã<select aria-label="Phường / Xã" value={value.carrier_ward_code || ""} disabled={disabled || !wards.length} required onChange={(event) => {
         const row = wards.find((w) => w.code === event.target.value);
-        onChange({ ...value, carrier_ward_code: row?.code || "", ward: row?.name || "" });
+        onChange({ ...value, station_id: 0, station_name: "", carrier_ward_code: row?.code || "", ward: row?.name || "" });
       }}><option value="">Chọn phường/xã</option>{wards.filter(supports).map((row) => <option key={row.code} value={row.code}>{row.name}</option>)}</select></label>
     </div>
     {error && <p className="form-error" role="alert">{error}</p>}

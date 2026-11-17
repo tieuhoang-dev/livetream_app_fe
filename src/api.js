@@ -14,6 +14,8 @@ const messages = {
 	shipping_invalid_parcel: "Khối lượng hoặc kích thước kiện chưa phù hợp để báo phí vận chuyển.",
 	shipping_pickup_required: "Người bán chưa lưu địa chỉ lấy hàng.",
 	shipping_pickup_area_required: "Người bán cần chọn khu vực lấy hàng theo danh mục GHN trong Cài đặt giao hàng.",
+	shipping_station_invalid: "Bưu cục chưa có khu vực báo phí hợp lệ. Hãy tìm và chọn lại bưu cục.",
+	shipping_stations_access_required: "Tài khoản GHN chưa có quyền tra bưu cục hoặc đang yêu cầu captcha. Liên hệ GHN để mở quyền; bạn vẫn có thể dùng địa chỉ lấy hàng.",
 	invalid_coordinates: "Vị trí chưa hợp lệ. Hãy định vị lại hoặc nhập địa chỉ.",
 	geocoding_unavailable: "Chưa tìm được địa chỉ từ bản đồ. Hãy thử lại hoặc chọn Nhập địa chỉ.",
 	location_not_supported: "Chưa xác định được tỉnh/thành tại vị trí này ở Việt Nam. Hãy chọn Nhập địa chỉ.",
