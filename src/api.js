@@ -1,4 +1,4 @@
-import { demoLiveCommand, demoRequest } from "./demo";
+import { demoLiveCommand, demoRequest, subscribeDemoLives } from "./demo";
 
 const configuredURL = (import.meta.env.VITE_PUBLIC_API_URL || "").replace(
   /\/+$/,
@@ -6,6 +6,16 @@ const configuredURL = (import.meta.env.VITE_PUBLIC_API_URL || "").replace(
 );
 const apiOrigin = import.meta.env.DEV ? "" : configuredURL;
 const messages = {
+	invalid_coordinates: "Vị trí chưa hợp lệ. Hãy định vị lại hoặc nhập địa chỉ.",
+	geocoding_unavailable: "Chưa tìm được địa chỉ từ bản đồ. Hãy thử lại hoặc chọn Nhập địa chỉ.",
+	location_not_supported: "Chưa xác định được tỉnh/thành tại vị trí này ở Việt Nam. Hãy chọn Nhập địa chỉ.",
+	invalid_delivery_address: "Kiểm tra họ tên, số điện thoại và địa chỉ nhận hàng (hoặc địa chỉ lấy hàng của shop).",
+	invalid_shipping_settings: "Nhập đầy đủ phí ship hợp lệ. Phí có thể bằng 0; ngưỡng miễn phí phải lớn hơn 0.",
+	shipping_not_configured: "Shop chưa thiết lập địa chỉ lấy hàng và phí giao hàng. Vui lòng liên hệ người bán.",
+	checkout_changed: "Giá hoặc phí ship vừa thay đổi. Hãy kiểm tra tổng tiền mới và xác nhận lại.",
+	duplicate_request_conflict: "Yêu cầu đặt hàng đã được dùng với thông tin khác. Hãy mở lại hộp đặt hàng.",
+	invalid_checkout_request: "Thông tin đặt hàng chưa hợp lệ.",
+	invalid_payment_method: "Phương thức thanh toán chưa hợp lệ.",
   insufficient_stock: "Số lượng còn trong kho không đủ.",
   live_media_unavailable:
     "Backend chưa cấu hình LiveKit. Kiểm tra LIVEKIT_URL, LIVEKIT_API_KEY và LIVEKIT_API_SECRET.",
@@ -67,15 +77,77 @@ export async function request(
         `Backend trả lỗi ${response.status}.`,
     );
     error.status = response.status;
+    error.code = payload?.error;
     throw error;
   }
   return payload;
 }
 
 export function apiFor(mode, token) {
-  return mode === "demo"
+  const api = mode === "demo"
     ? async (path, options) => demoRequest(path, options)
     : (path, options) => request(path, { ...options, token });
+  api.subscribeLives = mode === "demo" ? subscribeDemoLives : subscribeLives;
+  return api;
+}
+
+// The public catalog socket is independent of /api/auth/ws, so browsing does
+// not disconnect chat and does not require signing in.
+function subscribeLives(query, { onData, onError }) {
+  const url = new URL(`${apiOrigin}/api/livestreams/ws`, location.origin);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  let stopped = false;
+  let socket;
+  let timer;
+  let timeout;
+  let retryDelay = 500;
+  function connect() {
+    if (stopped) return;
+    let ws;
+    function reconnect() {
+      if (stopped || socket !== ws) return;
+      clearTimeout(timeout);
+      if (ws) {
+        ws.onclose = ws.onerror = null;
+        ws.close();
+      }
+      onError(new Error("Mất kết nối danh sách live. Đang kết nối lại…"));
+      timer = setTimeout(connect, retryDelay);
+      retryDelay = Math.min(retryDelay * 2, 15000);
+    }
+    try {
+      ws = new WebSocket(url);
+      socket = ws;
+    } catch {
+      socket = ws;
+      reconnect();
+      return;
+    }
+    timeout = setTimeout(reconnect, 8000);
+    ws.onopen = () => ws.send(JSON.stringify({ type: "list_lives", request_id: "catalog", query }));
+    ws.onmessage = ({ data }) => {
+      if (stopped || socket !== ws) return;
+      let message;
+      try { message = JSON.parse(data); } catch { return; }
+      if (message.request_id !== "catalog") return;
+      if (message.type === "list_lives_success" && Array.isArray(message.data)) {
+        clearTimeout(timeout);
+        retryDelay = 500;
+        onData(message);
+      } else if (message.type === "list_lives_error") {
+        clearTimeout(timeout);
+        onError(new Error(message.error === "invalid_query" ? messages.invalid_query : "Không tải được danh sách live. Hãy thử lại."));
+      }
+    };
+    ws.onerror = ws.onclose = reconnect;
+  }
+  connect();
+  return () => {
+    stopped = true;
+    clearTimeout(timer);
+    clearTimeout(timeout);
+    socket?.close();
+  };
 }
 
 export function readSession() {

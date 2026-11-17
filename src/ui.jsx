@@ -4,6 +4,7 @@ import {
   ArrowRight,
   ChevronLeft,
   ChevronRight,
+  Play,
   Package,
   Radio,
   Search,
@@ -27,6 +28,18 @@ export const statuses = {
   refunded: "Đã hoàn",
 };
 export const orderOptions = Object.entries(statuses);
+export const paymentMethods = [
+  ["cod", "Thanh toán khi nhận hàng (COD)"],
+  ["bank_transfer", "Chuyển khoản ngân hàng"],
+];
+export function paymentMethodName(method) {
+  if (method === "manual") return "Theo thỏa thuận";
+  return (
+    paymentMethods.find(([value]) => value === method)?.[1] ||
+    method ||
+    "Chưa chọn"
+  );
+}
 
 export function Picture({ src, alt = "", fallback: Icon = Package }) {
   const [failed, setFailed] = useState(false);
@@ -76,7 +89,10 @@ export function LiveCard({ live, onOpen }) {
         <Picture src={live.image} fallback={Radio} />
         <span className={`live-badge ${live.status === "end" ? "ended" : ""}`}>
           {live.status === "start" && <i />}
-          {live.status === "start" ? "Đang mở" : "Đã kết thúc"}
+          {live.status === "start" ? "LIVE" : "ĐÃ KẾT THÚC"}
+        </span>
+        <span className="live-card-play" aria-hidden="true">
+          <Play size={26} fill="currentColor" />
         </span>
         {live.category && (
           <span className="card-category">{live.category}</span>
@@ -245,7 +261,7 @@ export function Pagination({ result, onChange }) {
   );
 }
 
-export function Modal({ title, close, children }) {
+export function Modal({ title, close, children, className = "" }) {
   const ref = useRef(null);
   useEffect(() => {
     const dialog = ref.current;
@@ -260,6 +276,7 @@ export function Modal({ title, close, children }) {
   return (
     <dialog
       ref={ref}
+      className={className}
       aria-label={title}
       onCancel={(event) => {
         event.preventDefault();

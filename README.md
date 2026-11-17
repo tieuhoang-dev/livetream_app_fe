@@ -1,6 +1,6 @@
 # LiveMart · Frontend
 
-Ứng dụng React + Vite cho backend Go [livetream_app](https://github.com/tieuhoang-dev/livetream_app). Bố cục dùng bốn cột thẻ trên desktop và hai cột với thanh điều hướng dưới trên điện thoại.
+Ứng dụng React + Vite cho backend Go [livetream_app](https://github.com/tieuhoang-dev/livetream_app). Giao diện nền tối với điểm nhấn hồng/cyan, sidebar trên desktop và điều hướng dưới trên điện thoại. Phòng LIVE dùng khung video dọc cùng thông tin người phát, bình luận và sản phẩm ghim phủ trên video.
 
 ## Chạy trên Windows
 
@@ -43,6 +43,32 @@ Bản build không có `VITE_PUBLIC_API_URL` mở ở chế độ mẫu. Chọn 
 
 Chủ phiên có thể bấm **Thêm hàng** ngay trong phòng để chọn sản phẩm từ kho, giá bán và số lượng dành cho live. Người xem đăng nhập để đọc và gửi bình luận trong cùng phiên. Danh sách hàng và bình luận tự cập nhật.
 
+## Giao diện phòng LIVE
+
+- Trên desktop: video dọc, nền mở rộng làm mờ, thanh tương tác và giỏ sản phẩm bên phải.
+- Trên điện thoại: phòng chiếm toàn màn hình; bấm Giỏ hàng để mở bảng sản phẩm từ dưới lên.
+- Vuốt lên/xuống trên vùng video hoặc dùng phím mũi tên trên desktop để chuyển giữa các phiên đang mở được API trả về. Vuốt trong bình luận không chuyển phòng.
+- Bình luận có thể ẩn/hiện. Sản phẩm đang ghim mở chi tiết; người xem đặt hàng, chủ phiên dùng Thêm sản phẩm để quản lý kho live.
+- Khi đặt hàng, người mua chọn COD hoặc chuyển khoản ngân hàng. Backend lưu lựa chọn ở `payment_method`; chuyển khoản hiện theo hướng dẫn của người bán, chưa thu tiền tự động qua cổng thanh toán.
+- Đặt hàng trong live chỉ đóng hộp đặt hàng, cập nhật tồn kho và giữ nguyên phòng/video. Hiện thông báo thành công kèm nút **Xem đơn**; chỉ khi bấm nút này người mua mới chuyển sang đơn vừa tạo. Mua ngoài live vẫn mở đơn như trước.
+- Chia sẻ sao chép liên kết phòng; trình duyệt hỗ trợ có thể mở video toàn màn hình.
+- Thả tim là hiệu ứng giao diện cục bộ, chưa đồng bộ tới người xem khác. Không hiển thị số lượt tim hoặc người xem giả.
+- Ảnh và bình luận ví dụ chỉ thuộc chế độ Dùng dữ liệu mẫu. Video API vẫn đi qua LiveKit và giữ tỷ lệ của nguồn phát.
+
+## Kiểm tra giao diện
+
+```powershell
+npx playwright install chromium
+npm run test:ui
+```
+
+Các bài kiểm tra Chromium bao gồm bình luận, chuyển phòng bằng vuốt/phím,
+chia sẻ/toàn màn hình, giỏ hàng → đặt hàng, đóng dialog/đổi kích thước màn
+hình, quyền khách/chủ phiên, payload quản lý sản phẩm và lỗi LiveKit. Các ca
+API dùng response giả lập để kiểm tra frontend; không xác nhận chất lượng
+truyền video giữa hai thiết bị thật. Viewport được kiểm tra từ 320 đến 1440 px.
+Có thể đặt `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` để dùng Chromium đã cài trên máy.
+
 ## Đưa repo lên GitHub
 
 Tạo một repository trống tên `livetream_app_fe`. Từ thư mục mã nguồn đã giải nén, chạy:
@@ -54,3 +80,52 @@ git commit -m "Initial LiveMart frontend"
 git remote add origin https://github.com/<tai-khoan>/livetream_app_fe.git
 git push -u origin main
 ```
+
+## Địa chỉ giao hàng và bản đồ
+
+Trong **Kênh người bán → Giao hàng**, shop nhập người liên hệ, số điện thoại,
+tỉnh/thành, phường/xã và địa chỉ lấy hàng, rồi cấu hình phí nội tỉnh/liên tỉnh
+và ngưỡng miễn phí nếu có. Shop chưa cấu hình thì checkout sẽ báo rõ và chưa
+cho xác nhận đơn.
+
+Người mua nhập thông tin nhận hàng, ghi chú và chọn COD/chuyển khoản.
+Backend báo tiền hàng, phí ship và tổng phải trả dựa trên địa chỉ hai bên;
+đặt xong vẫn ở phòng live. Chi tiết đơn lưu địa chỉ/phí tại thời điểm đặt.
+
+Bản đồ Leaflet/OpenStreetMap cho phép bấm chọn, kéo ghim, dùng điểm giữa bản
+đồ hoặc lấy vị trí hiện tại. Không cần API key; giữ attribution OpenStreetMap.
+Cần Internet để tải nền bản đồ; GPS cần HTTPS hoặc localhost và quyền trình
+duyệt. Nếu không định vị/tải bản đồ được, địa chỉ nhập tay vẫn dùng được.
+Chọn **Sử dụng vị trí hiện tại** để lấy GPS và tự điền tỉnh/thành, phường/xã,
+địa chỉ từ backend. Bạn vẫn nhập tên, số điện thoại và bổ sung số nhà/căn hộ;
+GPS không xác định được số căn hộ. Chọn **Nhập địa chỉ** nếu muốn điền tay.
+Phí hiện theo mức shop, chưa tích hợp quãng đường hoặc API vận chuyển.
+
+Khi người bán bấm **Bắt đầu phát**, form nơi lấy hàng của phiên mặc định định
+vị hiện tại. Kiểm tra địa chỉ, rồi bấm **Dùng địa chỉ và bắt đầu phát**.
+Nếu GPS bị từ chối/lỗi, chọn **Nhập địa chỉ** để dùng địa chỉ đã lưu hoặc sửa
+lại. Mỗi phiên có nơi lấy hàng riêng, không đổi địa chỉ shop hay đơn đã tạo.
+Vị trí được lấy một lần lúc bắt đầu phát, không theo dõi liên tục khi di chuyển.
+
+Đổi tọa độ thành địa chỉ dùng Nominatim/OpenStreetMap qua backend (cần Internet).
+Nếu nhà cung cấp không trả đủ phường/xã hoặc số nhà, form yêu cầu bổ sung.
+Khi đổi sang nhập tay, kết quả GPS đến chậm không ghi đè dữ liệu đã nhập.
+Chế độ dữ liệu mẫu dùng địa chỉ nhập tay; tự điền từ GPS cần kết nối backend.
+
+Dữ liệu mã/tên 34 tỉnh/thành trong `src/provinces.json` lấy từ
+https://provinces.open-api.vn/api/v2/p/ ngày 17/11/2026, đồng bộ với backend.
+Cần cập nhật backend chứa API quote/shipping-settings cùng phiên bản FE này.
+
+## Danh sách live qua WebSocket
+
+Trang khám phá, danh sách chuyển phòng và tab Phiên live của người bán dùng
+`/api/livestreams/ws` (ws/wss theo URL backend). Client gửi
+`{type: "list_lives", request_id, query}` với bộ lọc, thứ tự và phân trang,
+nhận `list_lives_success` gồm `data/total/page/page_size`. Backend đẩy snapshot
+mới khi tạo/kết thúc live hoặc thêm/xóa sản phẩm trong live; FE không poll
+REST để lấy danh sách. Mất kết nối thì tự nối lại, gửi lại bộ lọc hiện tại.
+
+Kênh này công khai, chỉ đọc, không cần đăng nhập và không thay kết nối chat
+`/api/auth/ws`. API chi tiết live, sản phẩm, đơn và media token vẫn dùng REST.
+Cần cập nhật backend PR #13 cùng FE này; reverse proxy/tunnel phải hỗ trợ
+WebSocket Upgrade. Vite đã proxy `/api` với `ws: true`.

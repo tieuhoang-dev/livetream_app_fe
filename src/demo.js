@@ -1,3 +1,4 @@
+import provinces from "./provinces.json";
 const host = "ngocanh";
 const now = Date.now();
 const timestamp = (minutes) => new Date(now - minutes * 60000).toISOString();
@@ -82,6 +83,37 @@ function freshData() {
     products: sampleProducts,
     lives: sampleLives,
     orders: [],
+    comments: Object.fromEntries(
+      sampleLives.map((live) => [
+        live.id,
+        [
+          {
+            id: "1",
+            username: "Minh Anh",
+            content: "Chào cả nhà, hôm nay có món gì mới không ạ? 👋",
+            created_at: timestamp(3),
+          },
+          {
+            id: "2",
+            username: "Thu Phương",
+            content: "Món đang ghim nhìn xinh quá!",
+            created_at: timestamp(2),
+          },
+          {
+            id: "3",
+            username: "Hoàng Nam",
+            content: "Shop giới thiệu kỹ hơn giúp mình với nhé.",
+            created_at: timestamp(1),
+          },
+          {
+            id: "4",
+            username: "Khánh Linh",
+            content: "Mình vừa vào, chào mọi người 🫶",
+            created_at: timestamp(0),
+          },
+        ],
+      ]),
+    ),
     allocations: Object.fromEntries(
       sampleProducts.map((p, i) => [
         sampleLives[i].id,
@@ -102,7 +134,19 @@ function freshData() {
     ),
   };
 }
-const store = (state) => sessionStorage.setItem(storage, JSON.stringify(state));
+const store = (state) => {
+  sessionStorage.setItem(storage, JSON.stringify(state));
+  window.dispatchEvent(new Event("livemart-demo-change"));
+};
+export function subscribeDemoLives(query, { onData, onError }) {
+  const read = () => {
+    try { onData(demoRequest("/api/livestreams", { query })); }
+    catch (error) { onError(error); }
+  };
+  window.addEventListener("livemart-demo-change", read);
+  read();
+  return () => window.removeEventListener("livemart-demo-change", read);
+}
 const matches = (text, q) =>
   text
     .toLocaleLowerCase("vi")
@@ -136,6 +180,19 @@ export function demoRequest(
   const state = data();
   const [, , area, key, action, productId] = path.split("/");
   const { products, lives, orders, allocations } = state;
+  if (area === "delivery" && key === "reverse-geocode") throw new Error("Tự điền địa chỉ từ GPS cần kết nối backend. Trong bản mẫu, hãy chọn Nhập địa chỉ.");
+  state.shipping ??= Object.fromEntries([...new Set(products.map((product) => product.seller_id))].map((seller) => [seller, {
+    pickup_address: { name: "Shop dữ liệu mẫu", phone: "0900000000", province_code: "1", province_name: provinces.find((p) => p.code === "1").name, ward: "Phường mẫu", address_line: "Địa chỉ shop mẫu", latitude: null, longitude: null },
+    same_province_fee: 25000, other_province_fee: 40000, free_shipping_from: null,
+  }]));
+  if (area === "sales" && key === "shipping-settings") {
+    if (method === "GET") return { configured: Boolean(state.shipping[host]), settings: state.shipping[host] || null };
+    state.shipping[host] = { ...body, pickup_address: { ...body.pickup_address, province_name: provinces.find((p) => p.code === body.pickup_address.province_code)?.name } };
+    store(state);
+    return { configured: true, settings: state.shipping[host] };
+  }
+  if (area === "orders" && key === "quote") return demoQuote(state, body);
+
   if (area === "products") {
     if (method === "GET" && key) return get(products, key);
     if (method === "GET")
@@ -294,26 +351,32 @@ export function demoRequest(
         query,
       );
     if (area === "orders" && !key) {
+      const previous = orders.find((order) => body.request_id && order.request_id === body.request_id);
+      if (previous) return { ...previous, order_id: previous.id };
+      const quote = demoQuote(state, body);
+      if (body.expected_total != null && Math.round(body.expected_total * 100) !== Math.round(quote.total_amount * 100)) {
+        const error = new Error("Giá hoặc phí ship vừa thay đổi. Hãy xác nhận lại.");
+        error.code = "checkout_changed";
+        throw error;
+      }
       const product = get(products, body.product_id);
       const live = body.livestream_id ? get(lives, body.livestream_id) : null;
-      if (live && live.status !== "start") throw new Error("Live đã kết thúc.");
-      if (product.seller_id === host)
-        throw new Error("Bạn không thể đặt mua sản phẩm của chính mình.");
-      const item = live
-        ? (allocations[live.id] || []).find(
-            (entry) => entry.product_id === product.id,
-          )
-        : product;
-      if (!item || item.stock_quantity < body.quantity)
-        throw new Error("Kho không đủ hàng.");
+      const item = live ? (allocations[live.id] || []).find((entry) => entry.product_id === product.id) : product;
+      const price = quote.unit_price;
       item.stock_quantity -= body.quantity;
-      const price = live ? item.discount_price : product.price;
       const order = {
         id: id(),
         buyer_id: host,
         seller_id: product.seller_id,
         livestream_id: live?.id ?? null,
-        total_amount: price * body.quantity,
+        total_amount: quote.total_amount,
+        items_subtotal: quote.items_subtotal,
+        shipping_fee: quote.shipping_fee,
+        request_id: body.request_id,
+        delivery: {
+          recipient: { ...body.delivery, province_name: provinces.find((p) => p.code === body.delivery.province_code)?.name },
+          pickup: { ...state.shipping[product.seller_id].pickup_address }, note: body.note || "",
+        },
         status: "pending",
         created_at: timestamp(0),
         items: [
@@ -326,7 +389,7 @@ export function demoRequest(
           },
         ],
         payment: {
-          amount: price * body.quantity,
+          amount: quote.total_amount,
           payment_method: body.payment_method,
           status: "pending",
         },
@@ -404,4 +467,25 @@ export function demoLiveCommand(type, content) {
     store(state);
   }
   return live;
+}
+
+
+function demoQuote(state, body) {
+  if (!body.delivery?.name || !body.delivery.phone || !body.delivery.province_code || !body.delivery.ward || !body.delivery.address_line)
+    throw new Error("Điền đầy đủ thông tin nhận hàng.");
+  const product = get(state.products, body.product_id);
+  const live = body.livestream_id ? get(state.lives, body.livestream_id) : null;
+  if (live && live.status !== "start") throw new Error("Live đã kết thúc.");
+  if (product.seller_id === host) throw new Error("Bạn không thể đặt mua sản phẩm của chính mình.");
+  const item = live ? (state.allocations[live.id] || []).find((entry) => entry.product_id === product.id) : product;
+  if (!item || item.stock_quantity < body.quantity) throw new Error("Kho không đủ hàng.");
+  const settings = state.shipping[product.seller_id];
+  if (!settings) throw new Error("Shop chưa thiết lập địa chỉ lấy hàng và phí giao hàng.");
+  const unit = live ? item.discount_price : product.price;
+  const subtotal = Math.round(unit * body.quantity * 100) / 100;
+  const local = settings.pickup_address.province_code === body.delivery.province_code;
+  let fee = local ? settings.same_province_fee : settings.other_province_fee;
+  let zone = local ? "same_province" : "other_province";
+  if (settings.free_shipping_from != null && subtotal >= settings.free_shipping_from) { fee = 0; zone = "free"; }
+  return { unit_price: unit, quantity: body.quantity, items_subtotal: subtotal, shipping_fee: fee, total_amount: subtotal + fee, currency: "VND", shipping_zone: zone, pickup_province: settings.pickup_address.province_name };
 }

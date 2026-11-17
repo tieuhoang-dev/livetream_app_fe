@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { request } from "./api";
 import { Picture } from "./ui";
+import { LivePickupModal } from "./LivePickupModal";
 
 function mediaError(error) {
   switch (error.name) {
@@ -27,7 +28,15 @@ function mediaError(error) {
   }
 }
 
-export function LiveVideo({ api, live, mode, isOwner, withAccount, onEnded }) {
+export function LiveVideo({
+  api,
+  live,
+  mode,
+  isOwner,
+  withAccount,
+  onEnded,
+  children,
+}) {
   const connection = useRef(null);
   const video = useRef(null);
   const audio = useRef(null);
@@ -37,6 +46,7 @@ export function LiveVideo({ api, live, mode, isOwner, withAccount, onEnded }) {
   const [error, setError] = useState("");
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [ending, setEnding] = useState(false);
+  const [pickupOpen, setPickupOpen] = useState(false);
   const onEndedRef = useRef(onEnded);
   useEffect(() => {
     onEndedRef.current = onEnded;
@@ -54,6 +64,7 @@ export function LiveVideo({ api, live, mode, isOwner, withAccount, onEnded }) {
   useEffect(() => () => release(), []);
   useEffect(() => {
     if (live.status !== "start") {
+      setPickupOpen(false);
       release();
       setMedia({});
       setPhase("idle");
@@ -298,18 +309,21 @@ export function LiveVideo({ api, live, mode, isOwner, withAccount, onEnded }) {
           </span>
         )}
         {(!media.video || ended || phase === "reconnecting") && (
-          <div className="room-overlay">
+          <div
+            className={`room-overlay ${mode === "demo" && !ended ? "demo-video-overlay" : ""}`}
+          >
             <Video size={32} />
             <span role="status">{message}</span>
           </div>
         )}
+        {children}
       </div>
       {!ended && mode === "api" && (
         <div className="media-controls">
           {phase === "idle" && (
             <button
               className="button primary"
-              onClick={() => withAccount(connect)}
+              onClick={() => isOwner ? setPickupOpen(true) : withAccount(connect)}
             >
               {isOwner ? <Radio size={18} /> : <CirclePlay size={18} />}
               {isOwner ? "Bắt đầu phát" : "Xem trực tiếp"}
@@ -391,6 +405,10 @@ export function LiveVideo({ api, live, mode, isOwner, withAccount, onEnded }) {
           {error}
         </p>
       )}
+      {pickupOpen && <LivePickupModal api={api} live={live} close={() => setPickupOpen(false)} onReady={() => {
+        setPickupOpen(false);
+        withAccount(connect);
+      }} />}
     </div>
   );
 }

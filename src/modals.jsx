@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, LockKeyhole, ShoppingBag } from "lucide-react";
 import { request } from "./api";
-import { Modal, money, Picture } from "./ui";
+import { AddressFields, addressReady, emptyAddress } from "./DeliveryAddress";
+import { Modal, money, paymentMethods, Picture } from "./ui";
 
 const authActions = {
   login: ["Đăng nhập", "/api/users/login"],
@@ -205,68 +206,106 @@ export function ProductModal({ product, live, close, onBuy, isOwnProduct }) {
   );
 }
 
-export function CheckoutModal({ api, product, live, close, onOrder }) {
+function newCheckoutID() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 15) | 64;
+  bytes[8] = (bytes[8] & 63) | 128;
+  const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+  return [hex.slice(0,8), hex.slice(8,12), hex.slice(12,16), hex.slice(16,20), hex.slice(20)].join("-");
+}
+
+export function CheckoutModal({ api, product, live, close, onOrder, initialDelivery }) {
   const [quantity, setQuantity] = useState("1");
+  const [paymentMethod, setPaymentMethod] = useState("cod");
+  const [delivery, setDelivery] = useState(() => ({ ...emptyAddress, ...initialDelivery }));
+  const [note, setNote] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
-  const unitPrice = live ? product.discount_price : product.price;
+  const [quote, setQuote] = useState(null);
+  const [quoteError, setQuoteError] = useState("");
+  const [quoting, setQuoting] = useState(false);
+  const [quoteAttempt, setQuoteAttempt] = useState(0);
+  const base = {
+    product_id: live ? product.product_id : product.id,
+    quantity: Number(quantity),
+    payment_method: paymentMethod,
+    delivery,
+    ...(live ? { livestream_id: live.id } : {}),
+  };
+  const quoteKey = JSON.stringify(base);
+  const requestKey = JSON.stringify({ ...base, note });
+  const requestID = useMemo(newCheckoutID, [requestKey]);
+  useEffect(() => {
+    setQuote(null);
+    setQuoteError("");
+    setQuoting(false);
+    if (!addressReady(delivery) || !Number.isInteger(Number(quantity)) || Number(quantity) <= 0) return;
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      setQuoting(true);
+      try {
+        const value = await api("/api/orders/quote", {
+          method: "POST", body: JSON.parse(quoteKey), signal: controller.signal,
+        });
+        if (!controller.signal.aborted) setQuote(value);
+      } catch (err) {
+        if (!controller.signal.aborted) setQuoteError(err.message);
+      } finally {
+        if (!controller.signal.aborted) setQuoting(false);
+      }
+    }, 350);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [api, quoteKey, quoteAttempt]);
   async function submit(event) {
     event.preventDefault();
+    if (pending || quoting || !quote || !addressReady(delivery)) return;
     setPending(true);
     setError("");
     try {
       const result = await api("/api/orders", {
         method: "POST",
-        body: {
-          product_id: live ? product.product_id : product.id,
-          quantity: Number(quantity),
-          payment_method: "manual",
-          ...(live ? { livestream_id: live.id } : {}),
-        },
+        body: { ...base, note, request_id: requestID, expected_total: quote.total_amount },
       });
-      onOrder(result.order_id);
+      onOrder(result.order_id, delivery);
     } catch (err) {
       setError(err.message);
-    } finally {
-      setPending(false);
-    }
+      if (err.code === "checkout_changed") { setQuote(null); setQuoteAttempt((value) => value + 1); }
+    } finally { setPending(false); }
   }
+  const unitPrice = quote?.unit_price ?? (live ? product.discount_price : product.price);
   return (
     <Modal title="Đặt hàng" close={pending ? () => {} : close}>
-      <form className="stack-form" onSubmit={submit}>
+      <form className="stack-form checkout-form" onSubmit={submit}>
         <div className="checkout-product">
-          <div className="mini-photo">
-            <Picture src={product.image_url} />
-          </div>
-          <div>
-            <strong>{product.name}</strong>
-            <span>{money(unitPrice)}</span>
-          </div>
+          <div className="mini-photo"><Picture src={product.image_url} /></div>
+          <div><strong>{product.name}</strong><span>{money(unitPrice)}</span></div>
         </div>
-        <label>
-          Số lượng
-          <input
-            type="number"
-            min="1"
-            max={product.stock_quantity}
-            step="1"
-            value={quantity}
-            onChange={(event) => setQuantity(event.target.value)}
-            required
-          />
+        <label>Số lượng
+          <input type="number" min="1" max={product.stock_quantity} step="1" value={quantity} onChange={(event) => setQuantity(event.target.value)} disabled={pending} required />
         </label>
-        <div className="checkout-total">
-          <span>Tổng tiền</span>
-          <strong>{money(unitPrice * Number(quantity))}</strong>
+        <AddressFields api={api} value={delivery} onChange={setDelivery} disabled={pending} />
+        <label>Ghi chú giao hàng (không bắt buộc)
+          <textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={500} rows={2} disabled={pending} placeholder="Ví dụ: gọi trước khi giao…" />
+        </label>
+        <label>Phương thức thanh toán
+          <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} disabled={pending} aria-describedby="checkout-payment-note" required>
+            {paymentMethods.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </label>
+        <p className="payment-note" id="checkout-payment-note">{paymentMethod === "bank_transfer" ? "Liên hệ người bán để nhận thông tin chuyển khoản cho đơn hàng." : "Thanh toán khi bạn nhận được hàng."}</p>
+        {quote && <p className="payment-note">Lấy hàng tại {quote.pickup_province}. Phí giao hàng theo mức shop cấu hình.</p>}
+        <div className="checkout-breakdown" aria-label="Chi tiết thanh toán">
+          <div><span>Tiền hàng</span><strong>{quote ? money(quote.items_subtotal) : "Chưa tính"}</strong></div>
+          <div><span>Phí vận chuyển</span><strong>{quote ? (quote.shipping_fee === 0 ? "Miễn phí" : money(quote.shipping_fee)) : "Chưa tính"}</strong></div>
+          <div className="checkout-total"><span>Tổng phải trả</span><strong>{quote ? money(quote.total_amount) : "Chưa tính"}</strong></div>
         </div>
-        {error && (
-          <p className="form-error" role="alert">
-            {error}
-          </p>
-        )}
-        <button className="button primary" disabled={pending}>
-          {pending ? "Đang đặt…" : "Xác nhận đặt hàng"}
-          <ArrowRight size={17} />
+        {quoting && <p className="payment-note" role="status">Đang tính phí vận chuyển…</p>}
+        {!quote && !quoteError && !quoting && <p className="payment-note">Điền thông tin nhận hàng để xem tổng tiền và phí ship.</p>}
+        {quoteError && <div><p className="form-error" role="alert">{quoteError}</p><button type="button" className="text-button" onClick={() => setQuoteAttempt((value) => value + 1)}>Thử tính lại</button></div>}
+        {error && <p className="form-error" role="alert">{error}</p>}
+        <button className="button primary" disabled={pending || quoting || !quote || !addressReady(delivery)}>
+          {pending ? "Đang đặt…" : "Xác nhận đặt hàng"}<ArrowRight size={17} />
         </button>
       </form>
     </Modal>
