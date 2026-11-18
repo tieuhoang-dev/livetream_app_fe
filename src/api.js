@@ -66,14 +66,15 @@ export async function request(
       url.searchParams.set(key, value);
   });
   const headers = { Accept: "application/json" };
-  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const multipart = body instanceof FormData;
+  if (body !== undefined && !multipart) headers["Content-Type"] = "application/json";
   if (token) headers.Authorization = `Bearer ${token}`;
   let response;
   try {
     response = await fetch(url, {
       method,
       headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: multipart ? body : body === undefined ? undefined : JSON.stringify(body),
       signal: signal
         ? AbortSignal.any([signal, AbortSignal.timeout(12000)])
         : AbortSignal.timeout(12000),
@@ -100,7 +101,14 @@ export async function request(
 }
 
 export function apiFor(mode, token) {
-  const api = mode === "demo" ? async (path, options) => demoRequest(path, options) : (path, options) => request(path, { ...options, token });
+  const api = mode === "demo" ? async (path, options) => {
+    if (path === "/api/products/images" && options?.body instanceof FormData) {
+      const file = options.body.get("file");
+      const url = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); });
+      return { url };
+    }
+    return demoRequest(path, options);
+  } : (path, options) => request(path, { ...options, token });
   const url = new URL(`${apiOrigin}/api/ws`, location.origin); url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   const realtime = mode === "api" ? new RealtimeClient(url, { token, error: (code, status) => Object.assign(new Error(messages[code] || code), { code, status }) }) : null;
   api.command = mode === "demo" ? demoCommand : (type, payload, options) => realtime.request(type, payload, options);
@@ -130,6 +138,7 @@ export function readSession() {
 
 export function mediaURL(value) {
   if (!value) return "";
+  if (/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(value)) return value;
   if (value.startsWith("/uploads/")) return `${apiOrigin}${value}`;
   if (value.startsWith("/images/") || /^https?:\/\//i.test(value)) return value;
   return "";

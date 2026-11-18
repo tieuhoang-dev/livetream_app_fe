@@ -41,6 +41,8 @@ export async function mockAPI(page, owner = false, signedIn = owner) {
     "shipping.quote": ["/api/orders/quote", "POST"],
     "shipping.stations.nearby": ["/api/shipping/stations/nearby", "POST"],
     "live.media": [`/api/livestreams/${roomID}/media-token`, "POST"],
+    "live.logout": ["/api/livestreams/logout", "POST"],
+    "live.products.create": [`/api/livestreams/${roomID}/products/new`, "POST"],
     "live.products.add": [`/api/livestreams/${roomID}/products`, "POST"],
     "live.products.remove": [`/api/livestreams/${roomID}/products/${productID}`, "DELETE"],
     "live.end": [`/api/livestreams/${roomID}/end`, "POST"],
@@ -69,6 +71,8 @@ export async function mockAPI(page, owner = false, signedIn = owner) {
       case "shipping.pickup.save": livePickup = data.pickup_address; socket.publish("live.subscribe", roomSnapshot); socket.publish("shipping.origin.subscribe", { changed: true }); return { data: { pickup_address: livePickup } };
       case "shipping.quote": { const fee = data.delivery.province_code === "1" ? 25000 : 40000; return { data: { unit_price: item.discount_price, quantity: data.quantity, items_subtotal: data.quantity * item.discount_price, shipping_fee: fee, total_amount: data.quantity * item.discount_price + fee, currency: "VND", shipping_zone: "carrier", pickup_province: "Thành phố Hà Nội", shipping: { provider: "ghn", environment: "staging", quote_only: true } } }; }
       case "live.media": return { status: 503, data: { error: "live_media_unavailable" } };
+      case "live.products.create": return { data: { added: true, product_id: "new-product" } };
+      case "live.logout": room.status = "end"; socket.publish("lives.subscribe", list); return { data: { ended: [roomID], media_closed: true } };
       case "live.products.add": socket.publish("live.subscribe", roomSnapshot); return { data: { added: true } };
       case "live.products.remove": socket.publish("live.subscribe", roomSnapshot); return { data: { removed: true } };
       case "live.end": room.status = "end"; socket.publish("live.subscribe", roomSnapshot); socket.publish("lives.subscribe", list); return { data: { ...room, media_closed: true } };
@@ -79,10 +83,12 @@ export async function mockAPI(page, owner = false, signedIn = owner) {
   Object.defineProperties(writes, { command: { value: (type, handler) => overrides.set(type, handler) }, publish: { value: socket.publish }, frames: { value: socket.frames }, peers: { value: socket.peers } });
   await page.route("**/api/**", async (route) => {
     const request = route.request(), url = new URL(request.url()), path = url.pathname;
-    if (request.method() !== "GET") writes.push({ path, method: request.method(), body: request.postDataJSON(), authorization: request.headers().authorization, transport: "http" });
+    if (request.method() !== "GET") writes.push({ path, method: request.method(), body: request.headers()["content-type"]?.startsWith("multipart/") ? request.postData() : request.postDataJSON(), authorization: request.headers().authorization, transport: "http" });
     if (path === "/api/delivery/reverse-geocode") return json(route, { address: { ...request.postDataJSON(), location_mode: "current", province_code: "1", province_name: "Thành phố Hà Nội", ward: "Phường Hoàn Kiếm", address_line: "12 Đinh Tiên Hoàng" } });
     if (path === "/api/sales/shipping-settings") { if (request.method() === "PUT") shipping = request.postDataJSON(); return json(route, { configured: true, settings: shipping }); }
     if (path === "/api/orders" && request.method() === "POST") { const input = request.postDataJSON(); item.stock_quantity -= input.quantity; socket.publish("live.subscribe", roomSnapshot); return json(route, { order_id: "55555555-5555-4555-8555-555555555555", status: "pending", total_amount: input.quantity * item.discount_price }, 201); }
+    if (path === "/api/products/images") return json(route, { url: "/uploads/products/fixture.png" }, 201);
+    if (path === "/api/products" && request.method() === "POST") return json(route, { id: "new-product", ...request.postDataJSON() }, 201);
     if (path === "/api/products") return json(route, { data: [{ id: productID, seller_id: sellerID, name: item.name, stock_quantity: 20, price: 100000 }], total: 1, page: 1, page_size: 100 });
     return json(route, { error: `Unexpected HTTP endpoint: ${path}` }, 404);
   });

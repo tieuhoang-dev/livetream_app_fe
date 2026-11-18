@@ -1,10 +1,11 @@
-import { demoRequest, demoLiveCommand } from "../demo";
+import { demoRequest, demoLiveCommand, demoCreateLiveProduct } from "../demo";
 
 export async function demoCommand(type, data = {}) {
   switch (type) {
     case "lives.list": return demoRequest("/api/livestreams", { query: data });
     case "live.create": return demoLiveCommand("create_live", data.title);
     case "live.end": return demoLiveCommand("end_live", data.livestream_id);
+    case "live.products.create": return demoCreateLiveProduct(data);
     case "live.products.add": return demoRequest(`/api/livestreams/${data.livestream_id}/products`, { method: "POST", body: data });
     case "live.products.remove": return demoRequest(`/api/livestreams/${data.livestream_id}/products/${data.product_id}`, { method: "DELETE" });
     case "comments.send": return demoRequest(`/api/livestreams/${data.livestream_id}/comments`, { method: "POST", body: data });

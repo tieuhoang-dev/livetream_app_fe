@@ -184,12 +184,13 @@ export function demoRequest(
   if (area === "orders" && key === "quote") return demoQuote(state, body);
 
   if (area === "products") {
-    if (method === "GET" && key) return get(products, key);
+    if (method === "GET" && key) { const p = get(products, key); if (p.deleted_at) throw new Error("Không tìm thấy sản phẩm."); return p; }
     if (method === "GET")
       return page(
         products.filter(
           (p) =>
-            matches(p.name, query.q) &&
+            !p.deleted_at && matches(p.name, query.q) &&
+            (!query.exclude_livestream_id || !(allocations[query.exclude_livestream_id] || []).some((a) => a.product_id === p.id)) &&
             (!query.seller_id || p.seller_id === query.seller_id) &&
             (!query.in_stock || p.stock_quantity > 0),
         ),
@@ -208,16 +209,7 @@ export function demoRequest(
     }
     const product = get(products, key);
     if (method === "DELETE") {
-      if (
-        orders.some((order) =>
-          order.items.some((line) => line.product_id === key),
-        ) ||
-        Object.values(allocations).some((items) =>
-          items.some((item) => item.product_id === key),
-        )
-      )
-        throw new Error("Sản phẩm đang được sử dụng.");
-      state.products = products.filter((p) => p.id !== key);
+      product.deleted_at = timestamp(0);
       store(state);
       return null;
     }
@@ -279,7 +271,7 @@ export function demoRequest(
     const items = allocations[key] ?? [];
     if (method === "GET")
       return page(
-        [...items].sort((a, b) => Number(b.is_pinned) - Number(a.is_pinned)),
+        [...items].filter((item) => !products.find((p) => p.id === item.product_id)?.deleted_at).sort((a, b) => Number(b.is_pinned) - Number(a.is_pinned)),
         query,
       );
     const product = get(products, productId || body.product_id);
@@ -480,4 +472,16 @@ function demoQuote(state, body) {
   const fee = local ? 25000 : 40000;
   const zone = local ? "same_province" : "other_province";
   return { unit_price: unit, quantity: body.quantity, items_subtotal: subtotal, shipping_fee: fee, total_amount: subtotal + fee, currency: "VND", shipping_zone: zone, pickup_province: settings.pickup_address.province_name };
+}
+
+export function demoCreateLiveProduct(input) {
+  const state = data();
+  const live = get(state.lives, input.livestream_id);
+  if (live.seller_id !== host || live.status !== "start") throw new Error("Phiên live không còn hoạt động.");
+  if (input.stock_quantity <= 0 || input.stock_quantity > input.product.stock_quantity) throw new Error("Kho không đủ hàng.");
+  const product = { ...input.product, id: id(), seller_id: host, created_at: timestamp(0), stock_quantity: input.product.stock_quantity - input.stock_quantity };
+  state.products.unshift(product);
+  (state.allocations[live.id] ??= []).push({ id: id(), product_id: product.id, name: product.name, image_url: product.image_url, description: product.description, original_price: product.price, discount_price: input.discount_price, stock_quantity: input.stock_quantity, is_pinned: input.is_pinned });
+  store(state);
+  return { added: true, product_id: product.id };
 }

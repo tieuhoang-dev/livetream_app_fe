@@ -115,17 +115,10 @@ geocoding cần Internet; địa chỉ nhập tay luôn dùng được. Bản de
 
 ## Danh sách live qua WebSocket
 
-Trang khám phá, danh sách chuyển phòng và tab Phiên live của người bán dùng
-`/api/livestreams/ws` (ws/wss theo URL backend). Client gửi
-`{type: "list_lives", request_id, query}` với bộ lọc, thứ tự và phân trang,
-nhận `list_lives_success` gồm `data/total/page/page_size`. Backend đẩy snapshot
-mới khi tạo/kết thúc live hoặc thêm/xóa sản phẩm trong live; FE không poll
-REST để lấy danh sách. Mất kết nối thì tự nối lại, gửi lại bộ lọc hiện tại.
-
-Kênh này công khai, chỉ đọc, không cần đăng nhập và không thay kết nối chat
-`/api/auth/ws`. API chi tiết live, sản phẩm, đơn và media token vẫn dùng REST.
-Cần cập nhật backend PR #13 cùng FE này; reverse proxy/tunnel phải hỗ trợ
-WebSocket Upgrade. Vite đã proxy `/api` với `ws: true`.
+Trang khám phá, chuyển phòng và kênh người bán đăng ký `lives.subscribe`
+trên `/api/ws`. Tạo live bằng `live.create`; server commit SQL rồi đẩy snapshot
+cho các client đang đăng ký, áp lại filter/phân trang. Không poll HTTP. Cần
+cập nhật cả FE và BE PR #15; proxy/tunnel hỗ trợ WebSocket Upgrade.
 
 Trong bước bắt đầu phát hoặc Cài đặt giao hàng, chọn **Tìm bưu cục GHN gần vị
 trí này** để xem danh sách và ghim bưu cục theo quận/huyện GHN. GPS tự điền khu
@@ -155,3 +148,19 @@ tiếp tại địa chỉ đang live. Người bán kiểm tra rồi lưu nơi g
 đơn. Checkout hiện Giao đến với tên/điện thoại/địa chỉ người mua trước xác nhận;
 chi tiết đơn dùng cùng DeliverySummary. Khi nơi gửi/kiện đổi, WS báo lấy lại
 phí. Mất kết nối chỉ đăng ký lại subscription, không tự gửi lại lệnh ghi.
+
+
+## Tạo sản phẩm và kết thúc live
+
+Form sản phẩm dùng chung ở catalog và trong live, cho chọn ảnh JPG/PNG/WebP
+(tối đa 10 MB), preview rồi upload multipart `/api/products/images`. Không
+cần nhập đường dẫn. Sửa giữ ảnh cũ nếu không chọn ảnh mới và lấy lại parcel
+server trả. Trong live chọn Tạo sản phẩm mới; `live.products.create` tạo và
+cấp kho cùng transaction. Picker loại sản phẩm đã gắn trong live.
+
+Xóa sản phẩm là xóa mềm: ẩn khỏi bán, giữ lịch sử và xử lý đơn cũ. FE logout
+rời video ngay và gửi `live.logout` trước khi đóng phiên. Backend tự kiểm tra
+publisher từ LiveKit, kết thúc sau khoảng 90 giây mất tín hiệu cộng chu kỳ
+kiểm tra 15 giây; tab viewer/chat mở không giữ live sống. Live mới cũng cần
+bắt đầu phát trong grace 90 giây. Mọi thay đổi trạng thái trả về qua shared
+WebSocket, DB giữ trạng thái/deadline qua lần khởi động lại.

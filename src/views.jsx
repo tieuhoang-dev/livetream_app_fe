@@ -24,6 +24,7 @@ import {
   Store,
 } from "lucide-react";
 import { useSubscription } from "./realtime/useSubscription";
+import { ProductFields, readProductForm } from "./ProductFields";
 import { LiveVideo } from "./LiveVideo";
 import { LiveComments } from "./LiveComments";
 import { DeliverySummary } from "./DeliverySummary";
@@ -1392,6 +1393,7 @@ function SellerEditor({ editor, api, mode, session, close, done }) {
   }[kind];
   async function submit(event) {
     event.preventDefault();
+    if (working) return;
     setError("");
     setWorking(true);
     const form = new FormData(event.currentTarget);
@@ -1399,15 +1401,7 @@ function SellerEditor({ editor, api, mode, session, close, done }) {
       let openedLiveId;
       let mediaClosed = true;
       if (kind === "product") {
-        const body = {
-          name: form.get("name").trim(),
-          price: Number(form.get("price")),
-          image_url: form.get("image_url").trim(),
-          description: form.get("description").trim(),
-        };
-        if (!body.name) throw new Error("Nhập tên sản phẩm.");
-        if (!product) body.stock_quantity = Number(form.get("stock_quantity"));
-        body.parcel = { weight_grams: Number(form.get("weight_grams")), length_cm: Number(form.get("length_cm")), width_cm: Number(form.get("width_cm")), height_cm: Number(form.get("height_cm")) };
+        const body = await readProductForm(form, api, product);
         await api(path, { method: product ? "PATCH" : "POST", body });
       } else if (kind === "stock") {
         const delta = Number(form.get("delta"));
@@ -1447,72 +1441,7 @@ function SellerEditor({ editor, api, mode, session, close, done }) {
   return (
     <Modal title={title} close={working ? () => {} : close}>
       <form className="stack-form" onSubmit={submit}>
-        {kind === "product" && (
-          <>
-            <label>
-              Tên sản phẩm
-              <input
-                name="name"
-                defaultValue={product?.name}
-                required
-                maxLength={255}
-              />
-            </label>
-            <label>
-              Giá (₫)
-              <input
-                name="price"
-                type="number"
-                min="0"
-                max="99999999.99"
-                step="0.01"
-                defaultValue={product?.price}
-                required
-              />
-            </label>
-            {!product && (
-              <label>
-                Tồn kho ban đầu
-                <input
-                  name="stock_quantity"
-                  type="number"
-                  min="0"
-                  max="2147483647"
-                  defaultValue="0"
-                  required
-                />
-              </label>
-            )}
-            <fieldset className="delivery-fields">
-              <legend>Kiện đóng gói cho 1 sản phẩm</legend>
-              <p className="payment-note">Dùng để báo phí GHN. Khi mua nhiều sản phẩm, hệ thống cộng khối lượng và tính chiều cao xếp chồng.</p>
-              <div className="form-columns">
-                <label>Khối lượng (gram)<input name="weight_grams" type="number" min="1" max="1000000" step="1" required defaultValue={product?.parcel?.weight_grams || ""} /></label>
-                <label>Chiều dài (cm)<input name="length_cm" type="number" min="1" max="300" step="1" required defaultValue={product?.parcel?.length_cm || ""} /></label>
-                <label>Chiều rộng (cm)<input name="width_cm" type="number" min="1" max="300" step="1" required defaultValue={product?.parcel?.width_cm || ""} /></label>
-                <label>Chiều cao (cm)<input name="height_cm" type="number" min="1" max="300" step="1" required defaultValue={product?.parcel?.height_cm || ""} /></label>
-              </div>
-            </fieldset>
-            <label>
-              Đường dẫn ảnh
-              <input
-                name="image_url"
-                defaultValue={product?.image_url}
-                maxLength={255}
-                placeholder="https://…"
-              />
-            </label>
-            <label>
-              Mô tả
-              <textarea
-                name="description"
-                defaultValue={product?.description}
-                maxLength={255}
-                rows={3}
-              />
-            </label>
-          </>
-        )}
+        {kind === "product" && <ProductFields product={product} />}
         {kind === "stock" && (
           <label>
             Số lượng cộng hoặc trừ
@@ -1527,7 +1456,7 @@ function SellerEditor({ editor, api, mode, session, close, done }) {
             />
           </label>
         )}
-        {kind === "delete" && <p>Xác nhận xóa {product.name}?</p>}
+        {kind === "delete" && <p>Xóa “{product.name}” khỏi danh sách bán? Lịch sử đơn hàng vẫn được giữ lại.</p>}
         {kind === "create_live" && (
           <label>
             Tiêu đề live
@@ -1566,7 +1495,7 @@ function LiveInventory({
   const [page, setPage] = useState(1);
   const [productSearch, setProductSearch] = useState("");
   const [productId, setProductId] = useState("");
-  const path = `/api/livestreams/${live.id}/products`;
+  const [createNew, setCreateNew] = useState(false);
   const inventory = useSubscription(api, "live.subscribe", { livestream_id: live.id, page, page_size: pageSize }, true, refresh);
   const items = { data: inventory.data?.products, loading: inventory.loading, error: inventory.error };
   const stock = useData(
@@ -1574,6 +1503,7 @@ function LiveInventory({
     live.status === "start" ? "/api/products" : null,
     {
       seller_id: activeUser.user_id,
+      exclude_livestream_id: live.id,
       in_stock: true,
       q: productSearch,
       page_size: 100,
@@ -1582,10 +1512,12 @@ function LiveInventory({
   );
   const selected = stock.data?.data.find((product) => product.id === productId);
   async function update(method, item, body) {
+    if (working) return;
     setWorking(true);
     setError("");
     try {
       await api.command(item ? "live.products.remove" : "live.products.add", { livestream_id: live.id, ...(body || {}), ...(item ? { product_id: item.product_id } : {}) });
+      setProductId("");
       reload();
       notice(
         method === "POST"
@@ -1633,6 +1565,30 @@ function LiveInventory({
       </State>
       {live.status === "start" && (
         <>
+          <div className="form-columns">
+            <button className={`button ${createNew ? "secondary" : "primary"}`} disabled={working} onClick={() => setCreateNew(false)}>Chọn từ kho</button>
+            <button className={`button ${createNew ? "primary" : "secondary"}`} disabled={working} onClick={() => setCreateNew(true)}>Tạo sản phẩm mới</button>
+          </div>
+          {createNew ? <form className="stack-form inventory-form" onSubmit={async (event) => {
+            event.preventDefault(); if (working) return; const form = new FormData(event.currentTarget);
+            setWorking(true); setError("");
+            try {
+              const quantity = Number(form.get("stock"));
+              if (quantity > Number(form.get("stock_quantity"))) throw new Error("Số lượng đưa lên live vượt quá tồn kho ban đầu.");
+              const product = await readProductForm(form, api);
+              await api.command("live.products.create", { livestream_id: live.id, product, discount_price: Number(form.get("live_price")), stock_quantity: quantity, is_pinned: form.has("pin") });
+              setCreateNew(false); reload(); notice("Đã tạo sản phẩm và thêm vào live.");
+            } catch (err) { setError(err.message); }
+            finally { setWorking(false); }
+          }}>
+            <ProductFields />
+            <div className="form-columns">
+              <label>Giá trong live<input name="live_price" type="number" min="0" max="99999999.99" step="0.01" required /></label>
+              <label>Số lượng đưa lên live<input name="stock" type="number" min="1" max="2147483647" step="1" defaultValue="1" required /></label>
+            </div>
+            <label className="checkbox"><input name="pin" type="checkbox" /> Ghim sản phẩm</label>
+            <button className="button primary" disabled={working}>{working ? "Đang xử lý…" : "Tạo và thêm vào live"}</button>
+          </form> : <>
           <SearchBox
             placeholder="Tìm trong kho của bạn…"
             value={productSearch}
@@ -1706,6 +1662,7 @@ function LiveInventory({
               {stock.error.message}
             </p>
           )}
+          </>}
         </>
       )}
       {error && (
