@@ -81,64 +81,86 @@ git remote add origin https://github.com/<tai-khoan>/livetream_app_fe.git
 git push -u origin main
 ```
 
-## Địa chỉ giao hàng và bản đồ
+## Địa chỉ, kiện hàng và báo phí GHN
 
-Trong **Kênh người bán → Giao hàng**, shop nhập người liên hệ, số điện thoại,
-tỉnh/thành, phường/xã và địa chỉ lấy hàng, rồi cấu hình phí nội tỉnh/liên tỉnh
-và ngưỡng miễn phí nếu có. Shop chưa cấu hình thì checkout sẽ báo rõ và chưa
-cho xác nhận đơn.
+Ứng dụng chỉ lấy báo giá từ GHN, không tạo vận đơn, không đặt lịch lấy hàng.
+Backend mặc định GHN staging, giữ Token/ShopId trong `.env`; xem SHIPPING.md
+ở repo backend để cấu hình. Không có cấu hình hoặc hãng lỗi thì checkout
+báo rõ, không dùng phí 0 hay phí shop nhập thay thế.
 
-Người mua nhập thông tin nhận hàng, ghi chú và chọn COD/chuyển khoản.
-Backend báo tiền hàng, phí ship và tổng phải trả dựa trên địa chỉ hai bên;
-đặt xong vẫn ở phòng live. Chi tiết đơn lưu địa chỉ/phí tại thời điểm đặt.
+Chủ shop lưu địa chỉ lấy hàng tại Kênh người bán → Giao hàng. Khi tạo/sửa sản
+phẩm, bổ sung khối lượng (gram) và dài/rộng/cao (cm) của kiện cho một đơn vị.
+Sản phẩm cũ thiếu thông tin cần được sửa trước khi báo phí. Nhiều đơn vị được
+cộng khối lượng và xếp chồng chiều cao; kiện dự tính hiển thị trong checkout.
 
-Bản đồ Leaflet/OpenStreetMap cho phép bấm chọn, kéo ghim, dùng điểm giữa bản
-đồ hoặc lấy vị trí hiện tại. Không cần API key; giữ attribution OpenStreetMap.
-Cần Internet để tải nền bản đồ; GPS cần HTTPS hoặc localhost và quyền trình
-duyệt. Nếu không định vị/tải bản đồ được, địa chỉ nhập tay vẫn dùng được.
-Chọn **Sử dụng vị trí hiện tại** để lấy GPS và tự điền tỉnh/thành, phường/xã,
-địa chỉ từ backend. Bạn vẫn nhập tên, số điện thoại và bổ sung số nhà/căn hộ;
-GPS không xác định được số căn hộ. Chọn **Nhập địa chỉ** nếu muốn điền tay.
-Phí hiện theo mức shop, chưa tích hợp quãng đường hoặc API vận chuyển.
+Bắt đầu phát vẫn mặc định GPS và xác nhận địa chỉ riêng của phiên; có thể
+chuyển nhập tay. Tên/điện thoại và số nhà/căn hộ do người dùng xác nhận. GPS
+cần HTTPS/localhost và quyền trình duyệt, không theo dõi liên tục khi di chuyển.
 
-Khi người bán bấm **Bắt đầu phát**, form nơi lấy hàng của phiên mặc định định
-vị hiện tại. Kiểm tra địa chỉ, rồi bấm **Dùng địa chỉ và bắt đầu phát**.
-Nếu GPS bị từ chối/lỗi, chọn **Nhập địa chỉ** để dùng địa chỉ đã lưu hoặc sửa
-lại. Mỗi phiên có nơi lấy hàng riêng, không đổi địa chỉ shop hay đơn đã tạo.
-Vị trí được lấy một lần lúc bắt đầu phát, không theo dõi liên tục khi di chuyển.
+Chọn tỉnh hiện tại, khu vực GHN nếu có nhiều vùng cũ, quận/huyện và phường/xã
+trong danh mục hãng để báo phí. Endpoint tính phí GHN hiện dùng mã địa giới cũ,
+GPS không được đoán mã khu vực. Danh mục được lấy qua backend, không gửi token
+hãng vào trình duyệt. Danh mục phường offline trong src/wards.json vẫn hỗ trợ
+nhập tay khi chưa kết nối được hãng, nhưng chưa đủ để xác nhận báo giá.
 
-Đổi tọa độ thành địa chỉ dùng Nominatim/OpenStreetMap qua backend (cần Internet).
-Nếu nhà cung cấp không trả đủ phường/xã hoặc số nhà, form yêu cầu bổ sung.
-Khi đổi sang nhập tay, kết quả GPS đến chậm không ghi đè dữ liệu đã nhập.
-Chế độ dữ liệu mẫu dùng địa chỉ nhập tay; tự điền từ GPS cần kết nối backend.
+Checkout gửi mã khu vực và phương thức thanh toán cho backend; chỉ hiển thị
+phí server trả. Tạo đơn nội bộ lấy lại báo giá và kiểm tra giá/kiện/nơi lấy,
+lưu snapshot kèm môi trường, quote_only và thời điểm. COD có thể ảnh hưởng phụ
+phí nên đổi phương thức sẽ lấy lại báo giá. Đặt xong vẫn trong live; Xem đơn
+là thao tác chủ động. Không gửi đơn nội bộ sang hãng vận chuyển.
 
-Dữ liệu mã/tên 34 tỉnh/thành trong `src/provinces.json` lấy từ
-https://provinces.open-api.vn/api/v2/p/ ngày 17/11/2026, đồng bộ với backend.
-Cần cập nhật backend chứa API quote/shipping-settings cùng phiên bản FE này.
-
-Nếu người mua gặp **Shop chưa thiết lập địa chỉ lấy hàng và phí giao hàng**,
-chủ live bấm **Cài đặt giao hàng** ngay trong phòng, xác nhận địa chỉ và nhập
-phí nội tỉnh/liên tỉnh rồi lưu. Không cần dừng video. Người mua bấm **Thử tính
-lại** để tiếp tục đơn đang điền. Lần đầu bắt đầu phát cũng có hai ô phí này;
-không tự gán phí mặc định, nhập 0 chỉ khi shop chủ động miễn phí.
-
-Phí được báo ngay khi chọn tỉnh/thành. Họ tên, số điện thoại và địa chỉ chi
-tiết vẫn phải đủ trước khi tạo đơn; sửa thông tin liên hệ không làm mất báo
-giá đang xem. Phường/xã có gợi ý theo tỉnh, dùng danh mục 3.321 phường/xã
-đóng gói trong `src/wards.json`, lấy từ provinces.open-api.vn API v2 ngày
-17/11/2026. Đổi tỉnh sẽ xóa phường/xã cũ. Có thể gõ địa chỉ không có trong gợi
-ý để xử lý dữ liệu bản đồ cũ. Bản đồ chỉ mở khi người dùng muốn kiểm tra ghim.
+Leaflet/OpenStreetMap hỗ trợ kiểm tra ghim, giữ attribution. Dịch vụ reverse
+geocoding cần Internet; địa chỉ nhập tay luôn dùng được. Bản demo có phí mẫu,
+được ghi rõ là minh họa, không gọi GHN. Cập nhật cả backend và FE cùng nhau.
 
 ## Danh sách live qua WebSocket
 
-Trang khám phá, danh sách chuyển phòng và tab Phiên live của người bán dùng
-`/api/livestreams/ws` (ws/wss theo URL backend). Client gửi
-`{type: "list_lives", request_id, query}` với bộ lọc, thứ tự và phân trang,
-nhận `list_lives_success` gồm `data/total/page/page_size`. Backend đẩy snapshot
-mới khi tạo/kết thúc live hoặc thêm/xóa sản phẩm trong live; FE không poll
-REST để lấy danh sách. Mất kết nối thì tự nối lại, gửi lại bộ lọc hiện tại.
+Trang khám phá, chuyển phòng và kênh người bán đăng ký `lives.subscribe`
+trên `/api/ws`. Tạo live bằng `live.create`; server commit SQL rồi đẩy snapshot
+cho các client đang đăng ký, áp lại filter/phân trang. Không poll HTTP. Cần
+cập nhật cả FE và BE PR #15; proxy/tunnel hỗ trợ WebSocket Upgrade.
 
-Kênh này công khai, chỉ đọc, không cần đăng nhập và không thay kết nối chat
-`/api/auth/ws`. API chi tiết live, sản phẩm, đơn và media token vẫn dùng REST.
-Cần cập nhật backend PR #13 cùng FE này; reverse proxy/tunnel phải hỗ trợ
-WebSocket Upgrade. Vite đã proxy `/api` với `ws: true`.
+Trong bước bắt đầu phát hoặc Cài đặt giao hàng, chọn **Tìm bưu cục GHN gần vị
+trí này** để xem danh sách và ghim bưu cục theo quận/huyện GHN. GPS tự điền khu
+vực khi tên khớp chắc chắn; có thể chọn khu vực thủ công. Khoảng cách là đường
+chim bay trong phạm vi tra cứu, không bảo đảm gần nhất ngoài khu vực. Chọn
+bưu cục nếu người bán tự mang hàng ra gửi; backend kiểm tra lại bưu cục và lấy
+báo phí theo khu vực bưu cục đó. Khoảng cách chỉ dùng xếp hạng, không dùng để
+nhân ra phí ship. Người mua vẫn ở trong live sau khi đặt hàng.
+
+Tra bưu cục cần quyền GHN phù hợp; một số tài khoản yêu cầu captcha/mở quyền.
+Giao diện báo rõ và vẫn cho dùng địa chỉ lấy hàng khi chưa tra được. Dữ liệu
+thử nghiệm ghi nhãn staging; không tự tạo vận đơn hoặc hẹn lấy hàng. Kiểm thử
+UI dùng danh mục/bưu cục và báo phí giả lập, chưa gọi tài khoản GHN thật.
+
+
+## Realtime dùng chung
+
+FE dùng một kết nối /api/ws theo phiên đăng nhập. Kết nối này phục vụ danh
+sách/phòng live, sản phẩm, bình luận, media token, shipping và thông báo đơn;
+không polling HTTP các phần đó. Root client ở src/realtime/client.js, hook ở
+src/realtime/useSubscription.js. Backend root service và protocol nằm trong
+REALTIME.md của repo BE. Video vẫn do LiveKit xử lý.
+
+Backend chọn bưu cục hợp lệ gần nhất trong phạm vi tra cứu, trả selected. FE
+mặc định bật Tự chọn bưu cục khi có vị trí/khu vực; có thể tắt để lấy hàng trực
+tiếp tại địa chỉ đang live. Người bán kiểm tra rồi lưu nơi gửi. Không tạo vận
+đơn. Checkout hiện Giao đến với tên/điện thoại/địa chỉ người mua trước xác nhận;
+chi tiết đơn dùng cùng DeliverySummary. Khi nơi gửi/kiện đổi, WS báo lấy lại
+phí. Mất kết nối chỉ đăng ký lại subscription, không tự gửi lại lệnh ghi.
+
+
+## Tạo sản phẩm và kết thúc live
+
+Form sản phẩm dùng chung ở catalog và trong live, cho chọn ảnh JPG/PNG/WebP
+(tối đa 10 MB), preview rồi upload multipart `/api/products/images`. Không
+cần nhập đường dẫn. Sửa giữ ảnh cũ nếu không chọn ảnh mới và lấy lại parcel
+server trả. Trong live chọn Tạo sản phẩm mới; `live.products.create` tạo và
+cấp kho cùng transaction. Picker loại sản phẩm đã gắn trong live.
+
+Xóa sản phẩm là xóa mềm: ẩn khỏi bán, giữ lịch sử và xử lý đơn cũ. FE logout
+rời video ngay và gửi `live.logout` trước khi đóng phiên. Backend tự kiểm tra
+publisher từ LiveKit, kết thúc sau khoảng 90 giây mất tín hiệu cộng chu kỳ
+kiểm tra 15 giây; tab viewer/chat mở không giữ live sống. Live mới cũng cần
+bắt đầu phát trong grace 90 giây. Mọi thay đổi trạng thái trả về qua shared
+WebSocket, DB giữ trạng thái/deadline qua lần khởi động lại.

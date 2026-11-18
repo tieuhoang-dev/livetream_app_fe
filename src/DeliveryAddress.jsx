@@ -1,6 +1,8 @@
 import { useEffect, useId, useRef, useState } from "react";
 import provinces from "./provinces.json";
 import "leaflet/dist/leaflet.css";
+import { CarrierLocationFields } from "./CarrierLocationFields";
+import { NearbyStations } from "./NearbyStations";
 
 export const emptyAddress = {
   name: "", phone: "", province_code: "", ward: "", address_line: "",
@@ -9,8 +11,9 @@ export const emptyAddress = {
 function phoneReady(phone) {
   return /^(0[0-9]{9,10}|\+84[0-9]{9,10})$/.test(String(phone || "").replace(/[ .-]/g, ""));
 }
-export function shippingAreaReady(value) {
+export function shippingAreaReady(value, carrier = false) {
   return provinces.some((province) => province.code === value.province_code) &&
+    (!carrier || (value.carrier_province_id > 0 && value.carrier_district_id > 0 && Boolean(value.carrier_ward_code))) &&
     (value.location_mode !== "current" || (value.latitude != null && value.longitude != null));
 }
 export function addressMissingFields(value) {
@@ -35,11 +38,26 @@ export function AddressFields({ api, value, onChange, disabled, pickup = false, 
   const [error, setError] = useState("");
   const [mode, setMode] = useState(autoLocate ? "current" : value.location_mode || "manual");
   const [wards, setWards] = useState([]);
+  const [carrierProvinces, setCarrierProvinces] = useState([]);
+  const [carrierError, setCarrierError] = useState("");
+  const [locationPoint, setLocationPoint] = useState(null);
+  const [stations, setStations] = useState([]);
+  useEffect(() => { if (stations.some((station) => station.latitude != null)) setShowMap(true); }, [stations]);
+  const searchCenter = locationPoint || (value.latitude != null && value.longitude != null ? { latitude: value.latitude, longitude: value.longitude } : null);
+  const matchedCarrierProvinces = carrierProvinces.filter((p) => p.province_code === value.province_code);
   const latest = useRef({ value, onChange, disabled });
   latest.current = { value, onChange, disabled };
   const generation = useRef(0);
   const controller = useRef(null);
   const id = useId();
+  useEffect(() => {
+    if (api.mode === "demo") return;
+    const controller = new AbortController();
+    api.command("shipping.provinces", {}, { signal: controller.signal }).then((result) => {
+      if (!controller.signal.aborted) setCarrierProvinces(result.data || []);
+    }).catch((err) => { if (!controller.signal.aborted) setCarrierError(err.message); });
+    return () => controller.abort();
+  }, [api]);
   useEffect(() => {
     let active = true;
     setWards([]);
@@ -56,20 +74,21 @@ export function AddressFields({ api, value, onChange, disabled, pickup = false, 
     const attempt = ++generation.current;
     controller.current?.abort();
     controller.current = new AbortController();
-    setMode("current"); setLocating(true); setError("");
+    setMode("current"); setLocating(true); setError(""); setLocationPoint(null);
     const current = latest.current;
-    current.onChange({ ...current.value, location_mode: "current", latitude: null, longitude: null });
+    current.onChange({ ...current.value, location_mode: "current", latitude: null, longitude: null, station_id: 0, station_name: "", carrier_province_id: 0, carrier_district_id: 0, carrier_ward_code: "" });
     return { attempt, signal: controller.current.signal };
   }
   async function resolvePoint(latitude, longitude, request) {
     if (request.attempt !== generation.current || request.signal.aborted) return;
+    setLocationPoint({ latitude, longitude });
     try {
       const result = await api("/api/delivery/reverse-geocode", {
         method: "POST", body: { latitude, longitude }, signal: request.signal,
       });
       if (request.attempt !== generation.current || request.signal.aborted || latest.current.disabled) return;
       const current = latest.current;
-      current.onChange({ ...current.value, ...result.address, name: current.value.name, phone: current.value.phone, location_mode: "current" });
+      current.onChange({ ...current.value, ...result.address, station_id: 0, station_name: "", name: current.value.name, phone: current.value.phone, location_mode: "current" });
       if (!result.address.ward || !result.address.address_line) setError("Bản đồ chưa có đủ địa chỉ. Kiểm tra và bổ sung phường/xã, số nhà bên dưới.");
     } catch (err) {
       if (request.attempt === generation.current && !request.signal.aborted) setError(err.message);
@@ -89,14 +108,20 @@ export function AddressFields({ api, value, onChange, disabled, pickup = false, 
       }
     }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
   }
-  const update = (field) => (event) => { setError(""); onChange({ ...value, [field]: event.target.value }); };
+  const update = (field) => (event) => { setError(""); onChange({ ...value, ...(field === "address_line" || field === "ward" ? { station_id: 0, station_name: "" } : {}), [field]: event.target.value }); };
+  function selectStation(station) {
+    if (latest.current.disabled || !station.pickup_address) return;
+    generation.current += 1; controller.current?.abort(); setLocating(false); setMode("manual"); setError(""); setShowMap(true);
+    const current = latest.current;
+    current.onChange({ ...emptyAddress, ...station.pickup_address, name: current.value.name, phone: current.value.phone });
+  }
   return (
     <fieldset className="delivery-fields" disabled={disabled}>
       <legend>{pickup ? "Địa chỉ lấy hàng" : "Thông tin nhận hàng"}</legend>
       <div className="address-options" role="group" aria-label="Cách chọn địa chỉ">
         <label><input type="radio" name={`address-${id}`} checked={mode === "manual"} onChange={() => {
           generation.current += 1; controller.current?.abort(); setLocating(false); setError(""); setMode("manual");
-          onChange({ ...value, location_mode: "manual" });
+          onChange({ ...value, location_mode: "manual", station_id: 0, station_name: "" });
         }} />Nhập địa chỉ</label>
         <label><input type="radio" name={`address-${id}`} checked={mode === "current"} onChange={locate} />Sử dụng vị trí hiện tại</label>
       </div>
@@ -122,38 +147,44 @@ export function AddressFields({ api, value, onChange, disabled, pickup = false, 
             setMode("manual");
             setError("");
             const code = event.target.value;
-            onChange({ ...value, province_code: code, province_name: provinces.find((p) => p.code === code)?.name || "", ward: code === value.province_code ? value.ward : "", location_mode: "manual", latitude: null, longitude: null });
+            onChange({ ...value, province_code: code, province_name: provinces.find((p) => p.code === code)?.name || "", ward: code === value.province_code ? value.ward : "", location_mode: "manual", latitude: null, longitude: null, station_id: 0, station_name: "", carrier_province_id: 0, carrier_district_id: 0, carrier_ward_code: "" });
           }} disabled={locating} required>
             <option value="">Chọn tỉnh / thành phố</option>
             {provinces.map((province) => <option key={province.code} value={province.code}>{province.name}</option>)}
           </select>
         </label>
-        <label>Phường / Xã
+        {!matchedCarrierProvinces.length && <label>Phường / Xã
           <input aria-label="Phường / Xã" list={`${id}-wards`} autoComplete="off" value={value.ward || ""} onChange={update("ward")} disabled={locating || !value.province_code} placeholder={value.province_code ? "Gõ tên để chọn phường/xã" : "Chọn tỉnh/thành trước"} maxLength={100} required />
           <datalist id={`${id}-wards`}>{wards.map((name) => <option key={name} value={name} />)}</datalist>
-        </label>
+        </label>}
       </div>
+      {matchedCarrierProvinces.length > 0 && <CarrierLocationFields {...{ api, value, onChange, pickup }} provinces={matchedCarrierProvinces} disabled={disabled || locating} />}
+      {carrierError && <p className="payment-note">{carrierError}</p>}
+      {pickup && <NearbyStations api={api} value={value} center={searchCenter} disabled={disabled || locating} onSelect={selectStation} onResults={setStations} onSearch={() => setLocationPoint(searchCenter)} />}
       <label>Địa chỉ cụ thể
         <input autoComplete="shipping street-address" placeholder="Số nhà, tên đường, tòa nhà…" value={value.address_line || ""} onChange={update("address_line")} disabled={locating} maxLength={255} required />
       </label>
       <button type="button" className="button secondary" aria-expanded={showMap} aria-controls={id} onClick={() => setShowMap((open) => !open)}>
         {showMap ? "Ẩn bản đồ" : value.latitude != null ? "Chỉnh vị trí trên bản đồ" : "Chọn vị trí trên bản đồ"}
       </button>
-      {showMap && <div id={id}><DeliveryMap value={value} onChange={(address) => {
+      {showMap && <div id={id}><DeliveryMap value={value} stations={stations} onStationSelect={selectStation} center={searchCenter} onChange={(address) => {
+        if (address.latitude != null) setLocationPoint({ latitude: address.latitude, longitude: address.longitude });
         if (mode === "current" && address.latitude != null) void resolvePoint(address.latitude, address.longitude, beginLocation());
-        else onChange(address);
+        else onChange({ ...address, station_id: 0, station_name: "" });
       }} disabled={disabled || locating} /></div>}
       {!showMap && value.latitude != null && <p className="payment-note">Đã xác định vị trí. Bạn có thể mở bản đồ để kiểm tra hoặc chỉnh lại.</p>}
     </fieldset>
   );
 }
 
-function DeliveryMap({ value, onChange, disabled }) {
+function DeliveryMap({ value, onChange, disabled, stations = [], center, onStationSelect }) {
   const container = useRef(null);
   const map = useRef(null);
   const marker = useRef(null);
-  const latest = useRef({ value, onChange, disabled });
-  latest.current = { value, onChange, disabled };
+  const stationLayer = useRef(null);
+  const leaflet = useRef(null);
+  const latest = useRef({ value, onChange, disabled, onStationSelect });
+  latest.current = { value, onChange, disabled, onStationSelect };
   const [error, setError] = useState("");
   const [ready, setReady] = useState(false);
   useEffect(() => {
@@ -163,6 +194,7 @@ function DeliveryMap({ value, onChange, disabled }) {
     import("leaflet").then((module) => {
       if (!active) return;
       const L = module.default || module;
+      leaflet.current = L;
       const point = latest.current.value;
       instance = L.map(container.current, { scrollWheelZoom: false }).setView(point.latitude != null ? [point.latitude, point.longitude] : [16.2, 107.5], point.latitude != null ? 16 : 5);
       map.current = instance;
@@ -183,12 +215,30 @@ function DeliveryMap({ value, onChange, disabled }) {
       marker.current.on("dragend", () => select(marker.current.getLatLng()));
       instance.on("click", (event) => { if (!latest.current.disabled) { marker.current.setLatLng(event.latlng).addTo(instance); select(event.latlng); } });
     }).catch(() => { if (active) setError("Không mở được bản đồ. Bạn vẫn có thể nhập địa chỉ."); });
-    return () => { active = false; observer?.disconnect(); instance?.remove(); map.current = null; marker.current = null; };
+    return () => { active = false; observer?.disconnect(); instance?.stop(); instance?.remove(); map.current = null; marker.current = null; stationLayer.current = null; leaflet.current = null; };
   }, []);
+  useEffect(() => {
+    if (!ready || !map.current || !leaflet.current) return;
+    const L = leaflet.current;
+    stationLayer.current?.remove();
+    stationLayer.current = L.layerGroup().addTo(map.current);
+    const points = [];
+    for (const [index, station] of stations.entries()) {
+      if (station.latitude == null || station.longitude == null) continue;
+      const point = [station.latitude, station.longitude]; points.push(point);
+      const title = document.createElement("span"); title.textContent = station.name;
+      L.marker(point, { title: station.name, icon: L.divIcon({ className: "station-pin", html: `<span>${index + 1}</span>`, iconSize: [28, 28], iconAnchor: [14, 14] }) })
+        .bindTooltip(title).on("click", () => { if (!latest.current.disabled) latest.current.onStationSelect?.(station); }).addTo(stationLayer.current);
+    }
+    if (points.length) {
+      if (center) points.push([center.latitude, center.longitude]);
+      map.current.fitBounds(points, { padding: [24, 24], maxZoom: 16, animate: false });
+    }
+  }, [stations, ready, center?.latitude, center?.longitude]);
   useEffect(() => {
     if (!map.current || !marker.current) return;
     if (value.latitude == null) marker.current.remove();
-    else { marker.current.setLatLng([value.latitude, value.longitude]).addTo(map.current); map.current.panTo([value.latitude, value.longitude]); }
+    else { marker.current.setLatLng([value.latitude, value.longitude]).addTo(map.current); map.current.panTo([value.latitude, value.longitude], { animate: false }); }
     if (disabled) marker.current.dragging?.disable(); else marker.current.dragging?.enable();
   }, [value.latitude, value.longitude, disabled]);
   return <div className="delivery-map-panel">

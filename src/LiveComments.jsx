@@ -27,7 +27,7 @@ export function LiveComments({
   const [sending, setSending] = useState(false);
   const feed = useRef(null);
   const stickToBottom = useRef(true);
-  const path = `/api/livestreams/${live.id}/comments`;
+
 
   useEffect(() => {
     if (!activeUser) {
@@ -35,41 +35,23 @@ export function LiveComments({
       setReadError("");
       return;
     }
-    const controller = new AbortController();
-    let timer;
-    let cursor = "0";
-    setLoading(true);
-    setReadError("");
-    async function read() {
-      let nextDelay = 2500;
-      try {
-        const result = await api(path, {
-          query: { after: cursor },
-          signal: controller.signal,
-        });
-        if (controller.signal.aborted) return;
-        cursor = result.next_cursor;
-        setReadError("");
-        if (result.data.length)
-          setComments((previous) => appendComments(previous, result.data));
-        if (result.has_more) nextDelay = 0;
-      } catch (error) {
-        if (controller.signal.aborted) return;
-        setReadError(error.message);
-        nextDelay = 5000;
-      } finally {
-        if (!controller.signal.aborted) {
-          setLoading(false);
-          if (live.status === "start") timer = setTimeout(read, nextDelay);
-        }
-      }
-    }
-    void read();
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [api, path, activeUser, live.status]);
+    let active = true;
+    let checkpoint = "0";
+    setComments([]); setLoading(true); setReadError("");
+    const stop = api.subscribe("comments.subscribe", () => ({ livestream_id: live.id, after: checkpoint }), {
+      onData: (result) => {
+        if (!active) return;
+        checkpoint = result.next_cursor;
+        setReadError(""); setLoading(Boolean(result.has_more));
+        setComments((previous) => appendComments(previous, result.data || []));
+      },
+      onEvent: (event) => {
+        if (active && event.event === "comment.created") setComments((previous) => appendComments(previous, [event.data]));
+      },
+      onError: (error) => { if (active) { setReadError(error.message); setLoading(false); } },
+    });
+    return () => { active = false; stop(); };
+  }, [api, live.id, activeUser]);
 
   useEffect(() => {
     const element = feed.current;
@@ -84,7 +66,7 @@ export function LiveComments({
     setSending(true);
     setSendError("");
     try {
-      const comment = await api(path, { method: "POST", body: { content } });
+      const comment = await api.command("comments.send", { livestream_id: live.id, content });
       stickToBottom.current = true;
       setComments((previous) => appendComments(previous, [comment]));
       setDraft("");

@@ -58,6 +58,11 @@ function App() {
     [mode, session?.token],
   );
   const reload = useCallback(() => setRefresh((value) => value + 1), []);
+  useEffect(() => () => api.close(), [api]);
+  useEffect(() => {
+    if (mode !== "api" || !activeUser) return;
+    return api.subscribe("orders.subscribe", {}, { onEvent: reload, onData: reload });
+  }, [api, mode, activeUser, reload]);
 
   useEffect(() => {
     const update = () => {
@@ -116,15 +121,23 @@ function App() {
     setModal(null);
     modal?.after?.(next.token);
   }
-  function signOut() {
-    sessionStorage.removeItem("livemart-token");
-    setSession(null);
+  async function signOut() {
+    // Leaving the room immediately stops local tracks. Keep the authenticated
+    // socket long enough for the backend to end all of this seller's lives.
     setModal(null);
-    setSelectedOrder(null);
-    setDeliveryDraft(null);
     navigate("home");
-    setNotice("Đã đăng xuất.");
+    let confirmed = true;
+    try { await api.command("live.logout", {}, { signal: AbortSignal.timeout(5000) }); }
+    catch { confirmed = false; }
+    finally {
+      sessionStorage.removeItem("livemart-token");
+      setSession(null);
+      setSelectedOrder(null);
+      setDeliveryDraft(null);
+      setNotice(confirmed ? "Đã đăng xuất và kết thúc các phiên live của bạn." : "Đã đăng xuất. Live sẽ tự kết thúc sau khoảng 90 giây mất tín hiệu.");
+    }
   }
+
   const close = () => setModal(null);
   const showProduct = (product, live) =>
     setModal({ type: "product", product, live });
