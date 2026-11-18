@@ -42,6 +42,7 @@ export function AddressFields({ api, value, onChange, disabled, pickup = false, 
   const [carrierError, setCarrierError] = useState("");
   const [locationPoint, setLocationPoint] = useState(null);
   const [stations, setStations] = useState([]);
+  useEffect(() => { if (stations.some((station) => station.latitude != null)) setShowMap(true); }, [stations]);
   const searchCenter = locationPoint || (value.latitude != null && value.longitude != null ? { latitude: value.latitude, longitude: value.longitude } : null);
   const matchedCarrierProvinces = carrierProvinces.filter((p) => p.province_code === value.province_code);
   const latest = useRef({ value, onChange, disabled });
@@ -52,7 +53,7 @@ export function AddressFields({ api, value, onChange, disabled, pickup = false, 
   useEffect(() => {
     if (api.mode === "demo") return;
     const controller = new AbortController();
-    api("/api/shipping/provinces", { signal: controller.signal }).then((result) => {
+    api.command("shipping.provinces", {}, { signal: controller.signal }).then((result) => {
       if (!controller.signal.aborted) setCarrierProvinces(result.data || []);
     }).catch((err) => { if (!controller.signal.aborted) setCarrierError(err.message); });
     return () => controller.abort();
@@ -159,7 +160,7 @@ export function AddressFields({ api, value, onChange, disabled, pickup = false, 
       </div>
       {matchedCarrierProvinces.length > 0 && <CarrierLocationFields {...{ api, value, onChange, pickup }} provinces={matchedCarrierProvinces} disabled={disabled || locating} />}
       {carrierError && <p className="payment-note">{carrierError}</p>}
-      {pickup && <NearbyStations api={api} value={value} center={searchCenter} disabled={disabled || locating} onSelect={selectStation} onResults={setStations} onSearch={() => { setLocationPoint(searchCenter); setShowMap(true); }} />}
+      {pickup && <NearbyStations api={api} value={value} center={searchCenter} disabled={disabled || locating} onSelect={selectStation} onResults={setStations} onSearch={() => setLocationPoint(searchCenter)} />}
       <label>Địa chỉ cụ thể
         <input autoComplete="shipping street-address" placeholder="Số nhà, tên đường, tòa nhà…" value={value.address_line || ""} onChange={update("address_line")} disabled={locating} maxLength={255} required />
       </label>
@@ -214,7 +215,7 @@ function DeliveryMap({ value, onChange, disabled, stations = [], center, onStati
       marker.current.on("dragend", () => select(marker.current.getLatLng()));
       instance.on("click", (event) => { if (!latest.current.disabled) { marker.current.setLatLng(event.latlng).addTo(instance); select(event.latlng); } });
     }).catch(() => { if (active) setError("Không mở được bản đồ. Bạn vẫn có thể nhập địa chỉ."); });
-    return () => { active = false; observer?.disconnect(); instance?.remove(); map.current = null; marker.current = null; stationLayer.current = null; leaflet.current = null; };
+    return () => { active = false; observer?.disconnect(); instance?.stop(); instance?.remove(); map.current = null; marker.current = null; stationLayer.current = null; leaflet.current = null; };
   }, []);
   useEffect(() => {
     if (!ready || !map.current || !leaflet.current) return;
@@ -231,13 +232,13 @@ function DeliveryMap({ value, onChange, disabled, stations = [], center, onStati
     }
     if (points.length) {
       if (center) points.push([center.latitude, center.longitude]);
-      map.current.fitBounds(points, { padding: [24, 24], maxZoom: 16 });
+      map.current.fitBounds(points, { padding: [24, 24], maxZoom: 16, animate: false });
     }
   }, [stations, ready, center?.latitude, center?.longitude]);
   useEffect(() => {
     if (!map.current || !marker.current) return;
     if (value.latitude == null) marker.current.remove();
-    else { marker.current.setLatLng([value.latitude, value.longitude]).addTo(map.current); map.current.panTo([value.latitude, value.longitude]); }
+    else { marker.current.setLatLng([value.latitude, value.longitude]).addTo(map.current); map.current.panTo([value.latitude, value.longitude], { animate: false }); }
     if (disabled) marker.current.dragging?.disable(); else marker.current.dragging?.enable();
   }, [value.latitude, value.longitude, disabled]);
   return <div className="delivery-map-panel">

@@ -11,10 +11,9 @@ export function LivePickupModal({ api, live, close, onReady, startBroadcast = tr
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true); setError("");
-    api(`/api/livestreams/${live.id}/pickup`, { signal: controller.signal }).then((result) => {
+    api.command("shipping.pickup.get", { livestream_id: live.id }, { signal: controller.signal }).then((result) => {
       if (!controller.signal.aborted) {
         setAddress({ ...emptyAddress, name: live.seller_username || "", ...result.pickup_address });
-
       }
     }).catch((err) => { if (!controller.signal.aborted) setError(err.message); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
@@ -25,7 +24,7 @@ export function LivePickupModal({ api, live, close, onReady, startBroadcast = tr
     if (saving || !addressReady(address)) return;
     setSaving(true); setError("");
     try {
-      await api(`/api/livestreams/${live.id}/pickup`, { method: "PUT", body: { pickup_address: address } });
+      await api.command("shipping.pickup.save", { livestream_id: live.id, pickup_address: address });
       onReady();
     } catch (err) { setError(err.message); } finally { setSaving(false); }
   }

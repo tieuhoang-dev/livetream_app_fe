@@ -18,7 +18,7 @@ export function CarrierLocationFields({ api, value, onChange, provinces, disable
     setDistricts([]); setWards([]); setError("");
     if (!value.carrier_province_id) return;
     const controller = new AbortController();
-    api("/api/shipping/districts", { query: { province_id: value.carrier_province_id }, signal: controller.signal })
+    api.command("shipping.districts", { province_id: value.carrier_province_id }, { signal: controller.signal })
       .then((result) => { if (!controller.signal.aborted) setDistricts(result.data || []); })
       .catch((err) => { if (!controller.signal.aborted) setError(err.message); });
     return () => controller.abort();
@@ -27,7 +27,7 @@ export function CarrierLocationFields({ api, value, onChange, provinces, disable
     setWards([]); setError("");
     if (!value.carrier_district_id) return;
     const controller = new AbortController();
-    api("/api/shipping/wards", { query: { district_id: value.carrier_district_id }, signal: controller.signal })
+    api.command("shipping.wards", { district_id: value.carrier_district_id }, { signal: controller.signal })
       .then((result) => {
         if (controller.signal.aborted) return;
         const rows = result.data || []; setWards(rows);

@@ -23,10 +23,10 @@ import {
   ShoppingBag,
   Store,
 } from "lucide-react";
-import { liveCommand, request } from "./api";
+import { useSubscription } from "./realtime/useSubscription";
 import { LiveVideo } from "./LiveVideo";
 import { LiveComments } from "./LiveComments";
-import { addressText } from "./DeliveryAddress";
+import { DeliverySummary } from "./DeliverySummary";
 import { ShippingSettingsPanel } from "./ShippingSettings";
 import { useLiveList } from "./useLiveList";
 import {
@@ -64,7 +64,7 @@ const channelOptions = [
   ["live", "Trong live"],
 ];
 
-function useData(api, path, query, refresh, keepData = false, pollMs = 0) {
+function useData(api, path, query, refresh, keepData = false) {
   const queryKey = JSON.stringify(query || {});
   const [state, setState] = useState({ loading: Boolean(path) });
   useEffect(() => {
@@ -73,7 +73,6 @@ function useData(api, path, query, refresh, keepData = false, pollMs = 0) {
       return;
     }
     const controller = new AbortController();
-    let timer;
     setState((previous) =>
       keepData
         ? { data: previous.data, loading: !previous.data }
@@ -94,17 +93,13 @@ function useData(api, path, query, refresh, keepData = false, pollMs = 0) {
             loading: false,
           }));
         }
-      } finally {
-        if (!controller.signal.aborted && pollMs)
-          timer = setTimeout(read, pollMs);
       }
     }
     void read();
     return () => {
-      clearTimeout(timer);
       controller.abort();
     };
-  }, [api, path, queryKey, refresh, keepData, pollMs]);
+  }, [api, path, queryKey, refresh, keepData]);
   return state;
 }
 
@@ -443,23 +438,11 @@ export function LiveRoom({
     media.addEventListener("change", update);
     return () => media.removeEventListener("change", update);
   }, []);
-  const live = useData(
-    mode === "api" ? request : api,
-    `/api/livestreams/${id}`,
-    null,
-    refresh,
-    true,
-    mode === "api" ? 5000 : 0,
-  );
+  const roomSnapshot = useSubscription(api, "live.subscribe", { livestream_id: id, page, page_size: pageSize }, true, refresh);
+  const live = { data: roomSnapshot.data?.live, loading: roomSnapshot.loading, error: roomSnapshot.error };
+  const items = { data: roomSnapshot.data?.products, loading: roomSnapshot.loading, error: roomSnapshot.error };
+  const shippingOrigin = roomSnapshot.data?.shipping_origin;
   const roomOpen = live.data?.status === "start";
-  const items = useData(
-    api,
-    `/api/livestreams/${id}/products`,
-    { page, page_size: pageSize },
-    refresh,
-    true,
-    mode === "api" && roomOpen ? 5000 : 0,
-  );
   const feed = useLiveList(
     api,
     { status: "start", page_size: 20 },
@@ -815,6 +798,7 @@ export function LiveRoom({
                   <ChevronRight size={17} />
                 </button>
               )}
+              {shippingOrigin?.mode === "station_dropoff" && <p className="live-origin-note">Gửi từ {shippingOrigin.station_name} · {shippingOrigin.province_name}</p>}
               <LiveComments
                 api={api}
                 live={room}
@@ -1110,14 +1094,7 @@ function OrderDetail({ api, path, refresh, reload, close, seller, notice }) {
               ))}
             </div>
             {order.delivery ? (
-              <section className="order-delivery" aria-label="Thông tin nhận hàng">
-                <h3>Thông tin nhận hàng</h3>
-                <strong>{order.delivery.recipient.name}</strong>
-                <span>{order.delivery.recipient.phone}</span>
-                <p>{addressText(order.delivery.recipient)}</p>
-                {order.delivery.recipient.latitude != null && <a target="_blank" rel="noopener noreferrer" href={`https://www.openstreetmap.org/?mlat=${order.delivery.recipient.latitude}&mlon=${order.delivery.recipient.longitude}#map=17/${order.delivery.recipient.latitude}/${order.delivery.recipient.longitude}`}>Xem vị trí giao hàng trên bản đồ</a>}
-                {order.delivery.note && <p>Ghi chú: {order.delivery.note}</p>}
-              </section>
+              <DeliverySummary address={order.delivery.recipient} note={order.delivery.note} title="Thông tin nhận hàng" />
             ) : <p className="payment-note">Đơn cũ chưa có thông tin giao hàng.</p>}
             {order.items_subtotal != null && <div className="checkout-breakdown"><div><span>Tiền hàng</span><strong>{money(order.items_subtotal)}</strong></div><div><span>Phí vận chuyển</span><strong>{order.shipping_fee === 0 ? "Miễn phí" : money(order.shipping_fee)}</strong></div></div>}
             {order.delivery?.shipping?.provider && <p className="payment-note">Báo phí {order.delivery.shipping.provider.toUpperCase()} · {order.delivery.shipping.environment === "staging" ? "thử nghiệm" : "báo giá"}. Đơn này chỉ được lưu trong ứng dụng, chưa có vận đơn.</p>}
@@ -1441,14 +1418,12 @@ function SellerEditor({ editor, api, mode, session, close, done }) {
         });
       } else if (kind === "delete") await api(path, { method: "DELETE" });
       else if (kind === "end_live" && mode === "api") {
-        const result = await api(`/api/livestreams/${live.id}/end`, {
-          method: "POST",
-        });
+        const result = await api.command("live.end", { livestream_id: live.id });
         mediaClosed = result.media_closed;
       } else {
         const content = live?.id || form.get("title").trim();
         if (!content) throw new Error("Nhập tiêu đề live.");
-        const result = await liveCommand(mode, session?.token, kind, content);
+        const result = await api.command(kind === "create_live" ? "live.create" : "live.end", kind === "create_live" ? { title: content } : { livestream_id: content });
         if (kind === "create_live") openedLiveId = result.id;
       }
       done(
@@ -1592,7 +1567,8 @@ function LiveInventory({
   const [productSearch, setProductSearch] = useState("");
   const [productId, setProductId] = useState("");
   const path = `/api/livestreams/${live.id}/products`;
-  const items = useData(api, path, { page, page_size: pageSize }, refresh);
+  const inventory = useSubscription(api, "live.subscribe", { livestream_id: live.id, page, page_size: pageSize }, true, refresh);
+  const items = { data: inventory.data?.products, loading: inventory.loading, error: inventory.error };
   const stock = useData(
     api,
     live.status === "start" ? "/api/products" : null,
@@ -1609,7 +1585,7 @@ function LiveInventory({
     setWorking(true);
     setError("");
     try {
-      await api(item ? `${path}/${item.product_id}` : path, { method, body });
+      await api.command(item ? "live.products.remove" : "live.products.add", { livestream_id: live.id, ...(body || {}), ...(item ? { product_id: item.product_id } : {}) });
       reload();
       notice(
         method === "POST"

@@ -139,3 +139,19 @@ Tra bưu cục cần quyền GHN phù hợp; một số tài khoản yêu cầu 
 Giao diện báo rõ và vẫn cho dùng địa chỉ lấy hàng khi chưa tra được. Dữ liệu
 thử nghiệm ghi nhãn staging; không tự tạo vận đơn hoặc hẹn lấy hàng. Kiểm thử
 UI dùng danh mục/bưu cục và báo phí giả lập, chưa gọi tài khoản GHN thật.
+
+
+## Realtime dùng chung
+
+FE dùng một kết nối /api/ws theo phiên đăng nhập. Kết nối này phục vụ danh
+sách/phòng live, sản phẩm, bình luận, media token, shipping và thông báo đơn;
+không polling HTTP các phần đó. Root client ở src/realtime/client.js, hook ở
+src/realtime/useSubscription.js. Backend root service và protocol nằm trong
+REALTIME.md của repo BE. Video vẫn do LiveKit xử lý.
+
+Backend chọn bưu cục hợp lệ gần nhất trong phạm vi tra cứu, trả selected. FE
+mặc định bật Tự chọn bưu cục khi có vị trí/khu vực; có thể tắt để lấy hàng trực
+tiếp tại địa chỉ đang live. Người bán kiểm tra rồi lưu nơi gửi. Không tạo vận
+đơn. Checkout hiện Giao đến với tên/điện thoại/địa chỉ người mua trước xác nhận;
+chi tiết đơn dùng cùng DeliverySummary. Khi nơi gửi/kiện đổi, WS báo lấy lại
+phí. Mất kết nối chỉ đăng ký lại subscription, không tự gửi lại lệnh ghi.

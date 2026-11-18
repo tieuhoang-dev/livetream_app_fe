@@ -9,7 +9,6 @@ import {
   VideoOff,
   Volume2,
 } from "lucide-react";
-import { request } from "./api";
 import { Picture } from "./ui";
 import { LivePickupModal } from "./LivePickupModal";
 
@@ -47,6 +46,7 @@ export function LiveVideo({
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [ending, setEnding] = useState(false);
   const [pickupOpen, setPickupOpen] = useState(false);
+  const [pendingToken, setPendingToken] = useState(null);
   const [pickupFeedback, setPickupFeedback] = useState("");
   const onEndedRef = useRef(onEnded);
   useEffect(() => {
@@ -73,40 +73,6 @@ export function LiveVideo({
   }, [live.status]);
 
   useEffect(() => {
-    if (
-      mode !== "api" ||
-      live.status !== "start" ||
-      !["watching", "publishing", "reconnecting"].includes(phase)
-    )
-      return;
-    const controller = new AbortController();
-    let checking = false;
-    const timer = setInterval(async () => {
-      if (checking) return;
-      checking = true;
-      try {
-        const result = await api(`/api/livestreams/${live.id}`, {
-          signal: controller.signal,
-        });
-        if (!controller.signal.aborted && result.status === "end") {
-          release();
-          setMedia({});
-          setPhase("idle");
-          onEndedRef.current();
-        }
-      } catch {
-        /* The media connection handles transient network errors. */
-      } finally {
-        checking = false;
-      }
-    }, 10000);
-    return () => {
-      clearInterval(timer);
-      controller.abort();
-    };
-  }, [api, live.id, live.status, mode, phase]);
-
-  useEffect(() => {
     const element = video.current;
     if (!element || !media.video) return;
     media.video.attach(element);
@@ -122,6 +88,7 @@ export function LiveVideo({
 
   async function connect(token) {
     if (connection.current || live.status !== "start") return;
+    if (token && api.token !== token) { setPendingToken(token); return; }
     if (isOwner && !navigator.mediaDevices?.getUserMedia) {
       setError("Camera và micro cần trang HTTPS hoặc localhost.");
       return;
@@ -134,12 +101,7 @@ export function LiveVideo({
     try {
       const [sdk, access] = await Promise.all([
         import("livekit-client"),
-        request(`/api/livestreams/${live.id}/media-token`, {
-          token,
-          method: "POST",
-          body: { role: isOwner ? "publisher" : "viewer" },
-          signal: current.abort.signal,
-        }),
+        api.command("live.media", { livestream_id: live.id, role: isOwner ? "publisher" : "viewer" }, { signal: current.abort.signal }),
       ]);
       if (!active()) return;
       const { Room, RoomEvent, Track, DisconnectReason, createLocalTracks } =
@@ -226,6 +188,10 @@ export function LiveVideo({
     }
   }
 
+  useEffect(() => {
+    if (pendingToken && api.token === pendingToken) { setPendingToken(null); void connect(pendingToken); }
+  }, [api, pendingToken]);
+
   async function toggle(kind) {
     const current = connection.current;
     const participant = current?.room?.localParticipant;
@@ -259,9 +225,7 @@ export function LiveVideo({
     setEnding(true);
     setError("");
     try {
-      const result = await api(`/api/livestreams/${live.id}/end`, {
-        method: "POST",
-      });
+      const result = await api.command("live.end", { livestream_id: live.id });
       release();
       setMedia({});
       setPhase("idle");

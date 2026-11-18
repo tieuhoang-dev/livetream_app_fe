@@ -58,6 +58,11 @@ function App() {
     [mode, session?.token],
   );
   const reload = useCallback(() => setRefresh((value) => value + 1), []);
+  useEffect(() => () => api.close(), [api]);
+  useEffect(() => {
+    if (mode !== "api" || !activeUser) return;
+    return api.subscribe("orders.subscribe", {}, { onEvent: reload, onData: reload });
+  }, [api, mode, activeUser, reload]);
 
   useEffect(() => {
     const update = () => {

@@ -1,3 +1,4 @@
+import { DeliverySummary } from "./DeliverySummary";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, LockKeyhole, ShoppingBag } from "lucide-react";
 import { request } from "./api";
@@ -226,6 +227,10 @@ export function CheckoutModal({ api, product, live, close, onOrder, initialDeliv
   const [quoteError, setQuoteError] = useState("");
   const [quoting, setQuoting] = useState(false);
   const [quoteAttempt, setQuoteAttempt] = useState(0);
+  useEffect(() => {
+    if (!live?.id) return;
+    return api.subscribe("shipping.origin.subscribe", { livestream_id: live.id }, { onData: () => setQuoteAttempt((value) => value + 1) });
+  }, [api, live?.id]);
   const base = {
     product_id: live ? product.product_id : product.id,
     quantity: Number(quantity),
@@ -248,9 +253,7 @@ export function CheckoutModal({ api, product, live, close, onOrder, initialDeliv
     const timer = setTimeout(async () => {
       setQuoting(true);
       try {
-        const value = await api("/api/orders/quote", {
-          method: "POST", body: JSON.parse(quoteKey), signal: controller.signal,
-        });
+        const value = await api.command("shipping.quote", JSON.parse(quoteKey), { signal: controller.signal });
         if (!controller.signal.aborted) setQuote(value);
       } catch (err) {
         if (!controller.signal.aborted) setQuoteError(err.message);
@@ -291,6 +294,7 @@ export function CheckoutModal({ api, product, live, close, onOrder, initialDeliv
         <label>Ghi chú giao hàng (không bắt buộc)
           <textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={500} rows={2} disabled={pending} placeholder="Ví dụ: gọi trước khi giao…" />
         </label>
+        <DeliverySummary address={delivery} note={note} />
         <label>Phương thức thanh toán
           <select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} disabled={pending} aria-describedby="checkout-payment-note" required>
             {paymentMethods.map(([value, label]) => <option key={value} value={value}>{label}</option>)}

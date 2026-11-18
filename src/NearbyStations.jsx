@@ -4,6 +4,9 @@ const distanceText = (meters) => meters == null ? "Chưa có tọa độ" : mete
 
 export function NearbyStations({ api, value, center, disabled, onSelect, onResults, onSearch }) {
   const [result, setResult] = useState(null);
+  const [automatic, setAutomatic] = useState(true);
+  const autoSearchKey = useRef("");
+  const latest = useRef({ onSelect }); latest.current = { onSelect };
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const request = useRef(null);
@@ -11,24 +14,32 @@ export function NearbyStations({ api, value, center, disabled, onSelect, onResul
     request.current?.abort(); setLoading(false); setResult(null); setError(""); onResults([]);
     return () => request.current?.abort();
   }, [value.carrier_province_id, value.carrier_district_id, center?.latitude, center?.longitude]);
-  async function search() {
+  const pointKey = JSON.stringify([value.carrier_province_id, value.carrier_district_id, center?.latitude, center?.longitude]);
+  useEffect(() => {
+    if (automatic && api.mode !== "demo" && !disabled && center && value.carrier_district_id && autoSearchKey.current !== pointKey) {
+      autoSearchKey.current = pointKey; void search(true);
+    }
+  }, [pointKey, automatic, disabled, api]);
+  async function search(selectAutomatically = automatic) {
     if (disabled || loading || !center || !value.carrier_district_id) return;
     request.current?.abort(); const controller = new AbortController(); request.current = controller;
     setLoading(true); setError(""); setResult(null); onResults([]); onSearch();
     try {
-      const response = await api("/api/shipping/stations/nearby", { method: "POST", signal: controller.signal, body: {
+      const response = await api.command("shipping.stations.nearby", {
         latitude: center.latitude, longitude: center.longitude,
         carrier_province_id: value.carrier_province_id, carrier_district_id: value.carrier_district_id,
-      } });
+      }, { signal: controller.signal });
       if (controller.signal.aborted) return;
       setResult(response); onResults(response.data || []);
+      if (selectAutomatically && response.selected?.pickup_address) latest.current.onSelect(response.selected);
     } catch (err) { if (!controller.signal.aborted) setError(err.message); }
     finally { if (!controller.signal.aborted) setLoading(false); }
   }
   return <section className="nearby-stations" aria-label="Bưu cục GHN gần vị trí phát">
     <strong>Gửi hàng tại bưu cục GHN</strong>
+    <label className="station-auto"><input type="checkbox" checked={automatic} disabled={disabled} onChange={(event) => setAutomatic(event.target.checked)} />Tự chọn bưu cục gần nhất để mang hàng đến gửi</label>
     <p className="payment-note">Chọn bưu cục nếu bạn tự mang hàng đến gửi. Báo phí dùng khu vực của bưu cục được chọn.</p>
-    <button type="button" className="button secondary" disabled={disabled || loading || !center || !value.carrier_district_id || api.mode === "demo"} onClick={search}>{loading ? "Đang tìm bưu cục…" : "Tìm bưu cục GHN gần vị trí này"}</button>
+    <button type="button" className="button secondary" disabled={disabled || loading || !center || !value.carrier_district_id || api.mode === "demo"} onClick={() => search()}>{loading ? "Đang tìm bưu cục…" : "Tìm bưu cục GHN gần vị trí này"}</button>
     {!center && <p className="payment-note">Lấy vị trí hiện tại hoặc đặt ghim trên bản đồ trước.</p>}
     {!value.carrier_district_id && <p className="payment-note">Chọn tỉnh/khu vực và quận/huyện GHN để tìm bưu cục. GPS sẽ tự điền khi nhận diện được.</p>}
     {api.mode === "demo" && <p className="payment-note">Tra bưu cục thật cần kết nối backend có cấu hình GHN.</p>}

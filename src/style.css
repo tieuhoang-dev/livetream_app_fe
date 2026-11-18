@@ -1512,3 +1512,7 @@ dialog::backdrop {
   .delivery-fields .form-columns { grid-template-columns: 1fr; }
   .delivery-map { height: 220px; }
 }
+
+.station-auto { display: flex !important; align-items: flex-start; gap: 8px; }
+.station-auto input { width: 16px; min-height: 16px; margin: 2px 0 0; flex: 0 0 16px; }
+.live-origin-note { font-size: 11px; padding: 5px 8px; color: white; background: #0005; border-radius: 8px; }

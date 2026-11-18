@@ -1,3 +1,5 @@
+import { chooseCarrier, fillDelivery } from "./fixtures/forms";
+import { mockAPI, receiver, roomID, sellerID, productID, buyerID } from "./fixtures/api";
 import { test, expect } from "@playwright/test";
 
 async function demo(page) {
@@ -6,20 +8,7 @@ async function demo(page) {
   );
 }
 
-const receiver = { name: "Người nhận thử", phone: "0901234567", province_code: "1", ward: "Phường thử", address_line: "12 Đường thử", latitude: null, longitude: null, carrier_province_id: 1, carrier_district_id: 100, carrier_ward_code: "ward-100" };
-async function chooseCarrier(dialog, province = "1", wardCode = `ward-${Number(province)*100}`) {
-  await dialog.getByLabel("Quận / Huyện (GHN)", { exact: true }).selectOption(String(Number(province)*100));
-  await dialog.getByLabel("Phường / Xã", { exact: true }).selectOption(wardCode);
-}
-async function fillDelivery(dialog, value = receiver) {
-  await dialog.getByLabel("Họ tên người nhận", { exact: true }).fill(value.name);
-  await dialog.getByLabel("Số điện thoại", { exact: true }).fill(value.phone);
-  await dialog.getByLabel("Tỉnh / Thành phố", { exact: true }).selectOption(value.province_code);
-  const mode = await dialog.page().evaluate(() => sessionStorage.getItem("livemart-mode"));
-  if (mode === "api") await chooseCarrier(dialog, value.province_code);
-  else await dialog.getByLabel("Phường / Xã", { exact: true }).fill(value.ward);
-  await dialog.getByLabel("Địa chỉ cụ thể", { exact: true }).fill(value.address_line);
-}
+
 test.beforeEach(async ({ page }) => {
   await page.route("https://tile.openstreetmap.org/**", (route) => route.fulfill({
     contentType: "image/png",
@@ -184,138 +173,6 @@ test.describe("phone", () => {
   });
 });
 
-const roomID = "11111111-1111-4111-8111-111111111111";
-const sellerID = "22222222-2222-4222-8222-222222222222";
-const productID = "33333333-3333-4333-8333-333333333333";
-const buyerID = "44444444-4444-4444-8444-444444444444";
-
-async function mockAPI(page, owner = false, signedIn = owner) {
-  const writes = [];
-  let shipping = { pickup_address: { ...receiver, name: "Chủ shop", province_name: "Thành phố Hà Nội" }, same_province_fee: 25000, other_province_fee: 40000, free_shipping_from: null };
-  let livePickup = null;
-  const room = {
-    id: roomID,
-    title: "Phòng kiểm tra API",
-    seller_id: sellerID,
-    seller_username: "Shop kiểm tra",
-    status: "start",
-    started_at: new Date().toISOString(),
-  };
-  const item = {
-    id: "allocation",
-    product_id: productID,
-    name: "Sản phẩm kiểm tra",
-    stock_quantity: 5,
-    discount_price: 80000,
-    original_price: 100000,
-    is_pinned: true,
-  };
-  await page.routeWebSocket("**/api/livestreams/ws", (socket) => {
-    socket.onMessage((raw) => {
-      const message = JSON.parse(raw);
-      socket.send(JSON.stringify({ type: "list_lives_success", request_id: message.request_id,
-        data: [room], total: 1, page: message.query.page || 1, page_size: message.query.page_size || 20 }));
-    });
-  });
-  const profile = {
-    user_id: owner ? sellerID : buyerID,
-    username: owner ? "Chủ shop" : "Người mua",
-    exp: Math.floor(Date.now() / 1000) + 3600,
-  };
-  const token =
-    "ui-fixture." +
-    Buffer.from(JSON.stringify(profile)).toString("base64url") +
-    ".fixture";
-  await page.addInitScript(
-    ({ token, signedIn }) => {
-      sessionStorage.setItem("livemart-mode", "api");
-      if (signedIn) sessionStorage.setItem("livemart-token", token);
-    },
-    { token, signedIn },
-  );
-  await page.route("**/api/**", async (route) => {
-    const request = route.request(),
-      url = new URL(request.url());
-    const path = url.pathname;
-    let status = 200,
-      payload;
-    if (request.method() !== "GET")
-      writes.push({
-        path,
-        method: request.method(),
-        body: request.postDataJSON(),
-        authorization: request.headers().authorization,
-      });
-    if (path === "/api/shipping/provinces") payload = { data: [{ id: 1, name: "Hà Nội", province_code: "1" }, { id: 79, name: "Hồ Chí Minh", province_code: "79" }] };
-    else if (path === "/api/shipping/districts") payload = { data: [{ id: Number(url.searchParams.get("province_id"))*100, name: "Khu vực kiểm tra", support_type: 3 }] };
-    else if (path === "/api/shipping/wards") {
-      const d = Number(url.searchParams.get("district_id"));
-      payload = { data: [{ code: `ward-${d}`, name: receiver.ward, support_type: 3 }, { code: `gps-${d}`, name: d === 100 ? "Phường Hoàn Kiếm" : "Phường Sài Gòn", support_type: 3 }] };
-    } else if (path === "/api/delivery/reverse-geocode") {
-      const point = request.postDataJSON();
-      payload = { address: { ...point, location_mode: "current", province_code: "1", province_name: "Thành phố Hà Nội", ward: "Phường Hoàn Kiếm", address_line: "12 Đinh Tiên Hoàng" }, attribution: "© OpenStreetMap contributors" };
-    } else if (path === "/api/sales/shipping-settings") {
-      if (request.method() === "PUT") shipping = request.postDataJSON();
-      payload = { configured: true, settings: shipping };
-    } else if (path === `/api/livestreams/${roomID}/pickup`) {
-      if (request.method() === "PUT") {
-        const input = request.postDataJSON();
-        livePickup = input.pickup_address;
-        if (input.shipping_rates) shipping = { ...shipping, ...input.shipping_rates };
-      }
-      payload = { pickup_address: livePickup || shipping.pickup_address, shipping_configured: true,
-        shipping_rates: { same_province_fee: shipping.same_province_fee, other_province_fee: shipping.other_province_fee, free_shipping_from: shipping.free_shipping_from } };
-    } else if (path === "/api/orders/quote") {
-      const input = request.postDataJSON();
-      const fee = input.delivery.province_code === "1" ? 25000 : 40000;
-      payload = { unit_price: item.discount_price, quantity: input.quantity, items_subtotal: input.quantity * item.discount_price, shipping_fee: fee, total_amount: input.quantity * item.discount_price + fee, currency: "VND", shipping_zone: "carrier", pickup_province: "Thành phố Hà Nội", shipping: { provider: "ghn", environment: "staging", quote_only: true } };
-    } else if (path.endsWith("/media-token")) {
-      status = 503;
-      payload = { error: "live_media_unavailable" };
-    } else if (path === "/api/orders" && request.method() === "POST") {
-      const input = request.postDataJSON();
-      item.stock_quantity -= input.quantity;
-      status = 201;
-      payload = { order_id: "55555555-5555-4555-8555-555555555555", status: "pending", total_amount: input.quantity * item.discount_price };
-    } else if (path.endsWith("/comments"))
-      payload = { data: [], next_cursor: "0", has_more: false };
-    else if (path === `/api/livestreams/${roomID}`) payload = room;
-    else if (path === "/api/livestreams")
-      payload = { data: [room], total: 1, page: 1, page_size: 20 };
-    else if (path === "/api/products")
-      payload = {
-        data: [
-          {
-            id: productID,
-            seller_id: sellerID,
-            name: item.name,
-            stock_quantity: 20,
-            price: 100000,
-          },
-        ],
-        total: 1,
-        page: 1,
-        page_size: 100,
-      };
-    else if (path.endsWith("/products")) {
-      status = request.method() === "POST" ? 201 : 200;
-      payload =
-        request.method() === "POST"
-          ? { message: "Product added to livestream" }
-          : { data: [item], total: 1, page: 1, page_size: 12 };
-    } else {
-      status = 404;
-      payload = { error: "fixture endpoint not found" };
-    }
-    await route.fulfill({
-      status,
-      contentType: "application/json",
-      body: JSON.stringify(payload),
-    });
-  });
-  return writes;
-}
-
 test("catalog checkout still opens the new order and shows the COD method", async ({ page }) => {
   await demo(page);
   await page.goto("/#shop");
@@ -429,7 +286,8 @@ test("API owner can add inventory and media errors retain the live interface", a
     stock_quantity: 3,
     is_pinned: false,
   });
-  expect(writes[0].authorization).toContain("Bearer ui-fixture.");
+  expect(writes[0].transport).toBe("websocket");
+  expect(writes.frames.find((frame) => frame.type === "authenticate").payload.token).toContain("ui-fixture.");
   await dialog.getByRole("button", { name: "Đóng", exact: true }).click();
   await page.addInitScript(() => {
     navigator.geolocation.getCurrentPosition = (_success, failure) => failure({ code: 1 });
@@ -588,8 +446,8 @@ test("seller defaults to the broadcast location and saves it before requesting m
   await origin.getByRole("button", { name: "Dùng địa chỉ và bắt đầu phát", exact: true }).click();
   await expect(origin).not.toBeVisible();
   await expect(page.getByRole("alert")).toContainText("LiveKit");
-  expect(writes.map((entry) => entry.path)).toEqual(["/api/delivery/reverse-geocode", `/api/livestreams/${roomID}/pickup`, `/api/livestreams/${roomID}/media-token`]);
-  expect(writes[1].body.pickup_address).toMatchObject({ name: "Chủ shop", phone: receiver.phone, location_mode: "current", latitude: 21.028511, longitude: 105.804817, address_line: "12 Đinh Tiên Hoàng" });
+  expect(writes.filter((entry) => entry.command !== "shipping.stations.nearby").map((entry) => entry.path)).toEqual(["/api/delivery/reverse-geocode", `/api/livestreams/${roomID}/pickup`, `/api/livestreams/${roomID}/media-token`]);
+  expect(writes.find((entry) => entry.command === "shipping.pickup.save").body.pickup_address).toMatchObject({ name: "Chủ shop", phone: receiver.phone, location_mode: "current", latitude: 21.028511, longitude: 105.804817, address_line: "12 Đinh Tiên Hoàng" });
   expect(writes.some((entry) => entry.path === "/api/sales/shipping-settings")).toBe(false);
 });
 
@@ -633,9 +491,7 @@ test("late GPS callbacks cannot replace a manually entered address", async ({ pa
 
 test("a carrier failure cannot produce a fake zero-fee order", async ({ page }) => {
   const writes = await mockAPI(page, false, true);
-  await page.route("**/api/orders/quote", (route) => route.fulfill({
-    status: 409, contentType: "application/json", body: JSON.stringify({ error: "shipping_unavailable" }),
-  }));
+  writes.command("shipping.quote", () => ({ status: 502, data: { error: "shipping_unavailable" } }));
   await page.goto(`/#live/${roomID}`);
   await page.getByRole("button", { name: "Chọn mua", exact: true }).click();
   const checkout = page.getByRole("dialog", { name: "Đặt hàng", exact: true });
@@ -674,11 +530,8 @@ test("first-time seller saves a pickup without entering or sending fees", async 
   const writes = await mockAPI(page, true);
   const saved = [];
   await page.addInitScript(() => { navigator.geolocation.getCurrentPosition = (_success, failure) => failure({ code: 1 }); });
-  await page.route(`**/api/livestreams/${roomID}/pickup`, (route) => {
-    if (route.request().method() === "GET") return route.fulfill({ contentType: "application/json", body: JSON.stringify({ pickup_address: receiver, shipping_configured: false, quote_only: true }) });
-    saved.push(route.request().postDataJSON());
-    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ pickup_address: saved.at(-1).pickup_address }) });
-  });
+  writes.command("shipping.pickup.get", () => ({ data: { pickup_address: receiver } }));
+  writes.command("shipping.pickup.save", (input) => { saved.push({ pickup_address: input.pickup_address }); return { data: { pickup_address: input.pickup_address } }; });
   await page.goto(`/#live/${roomID}`);
   await page.getByRole("button", { name: "Bắt đầu phát", exact: true }).click();
   const origin = page.getByRole("dialog", { name: "Nơi lấy hàng của phiên live", exact: true });
@@ -696,14 +549,11 @@ test("first-time seller saves a pickup without entering or sending fees", async 
 test("seller fixes a pickup inside the room and buyer retrieves a carrier quote", async ({ page, context }) => {
   const sellerWrites = await mockAPI(page, true);
   let configured = false;
-  await page.route(`**/api/livestreams/${roomID}/pickup`, (route) => {
-    if (route.request().method() === "GET") return route.fulfill({ contentType: "application/json", body: JSON.stringify({ pickup_address: receiver, shipping_configured: configured, quote_only: true }) });
-    configured = true;
-    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ pickup_address: route.request().postDataJSON().pickup_address }) });
-  });
+  sellerWrites.command("shipping.pickup.get", () => ({ data: { pickup_address: receiver } }));
+  sellerWrites.command("shipping.pickup.save", (input) => { configured = true; return { data: { pickup_address: input.pickup_address } }; });
   const buyer = await context.newPage();
   const buyerWrites = await mockAPI(buyer, false, true);
-  await buyer.route("**/api/orders/quote", (route) => route.fulfill({ status: configured ? 200 : 409, contentType: "application/json", body: JSON.stringify(configured ? { unit_price: 80000, quantity: 1, items_subtotal: 80000, shipping_fee: 25000, total_amount: 105000, currency: "VND", pickup_province: "Thành phố Hà Nội", shipping: {provider:"ghn",environment:"staging",quote_only:true} } : { error: "shipping_pickup_required" }) }));
+  buyerWrites.command("shipping.quote", () => ({ status: configured ? 200 : 409, data: configured ? { unit_price: 80000, quantity: 1, items_subtotal: 80000, shipping_fee: 25000, total_amount: 105000, currency: "VND", pickup_province: "Thành phố Hà Nội", shipping: {provider:"ghn",environment:"staging",quote_only:true} } : { error: "shipping_pickup_required" } }));
   await buyer.goto(`/#live/${roomID}`);
   await buyer.getByRole("button", { name: "Chọn mua", exact: true }).click();
   const checkout = buyer.getByRole("dialog", { name: "Đặt hàng", exact: true });
@@ -728,7 +578,7 @@ test("seller fixes a pickup inside the room and buyer retrieves a carrier quote"
 
 test("missing carrier configuration does not allow a local order or invented fee", async ({ page }) => {
   const writes = await mockAPI(page, false, true);
-  await page.route("**/api/shipping/provinces", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "shipping_provider_not_configured" }) }));
+  writes.command("shipping.provinces", () => ({ status: 503, data: { error: "shipping_provider_not_configured" } }));
   await page.goto(`/#live/${roomID}`);
   await page.getByRole("button", { name: "Chọn mua", exact: true }).click();
   const checkout = page.getByRole("dialog", { name: "Đặt hàng", exact: true });
@@ -767,16 +617,13 @@ test("seller edits parcel metadata without a shipping-fee input", async ({ page 
 });
 
 test("a changed shipping quote requires a second confirmation and preserves the request key", async ({ page }) => {
-  await mockAPI(page, false, true);
+  const writes = await mockAPI(page, false, true);
   let fee = 25000;
   const attempts = [];
-  await page.route("**/api/orders/quote", (route) => {
-    const input = route.request().postDataJSON();
-    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
-      unit_price: 80000, quantity: input.quantity, items_subtotal: 80000 * input.quantity,
-      shipping_fee: fee, total_amount: 80000 * input.quantity + fee, pickup_province: "Thành phố Hà Nội", currency: "VND",
-    }) });
-  });
+  writes.command("shipping.quote", (input) => ({ data: {
+    unit_price: 80000, quantity: input.quantity, items_subtotal: 80000 * input.quantity,
+    shipping_fee: fee, total_amount: 80000 * input.quantity + fee, pickup_province: "Thành phố Hà Nội", currency: "VND",
+  } }));
   await page.route("**/api/orders", (route) => {
     attempts.push(route.request().postDataJSON());
     if (attempts.length === 1) {
@@ -818,14 +665,14 @@ test("seller selects a nearby GHN station and buyer keeps the live after a stati
   await context.grantPermissions(["geolocation"]); await context.setGeolocation({ latitude: 21.028511, longitude: 105.804817 });
   const writes = await mockAPI(page, true); await carrierGPS(page);
   const searches = [];
-  await page.route("**/api/shipping/stations/nearby", (route) => { searches.push(route.request().postDataJSON()); return route.fulfill({ contentType: "application/json", body: JSON.stringify(nearbyStationResult) }); });
+  writes.command("shipping.stations.nearby", (data) => { searches.push(data); return { data: { ...nearbyStationResult, selected: nearbyStationResult.data[0] } }; });
   await page.goto(`/#live/${roomID}`);
   const player = await page.locator(".live-video").elementHandle();
   await page.getByRole("button", { name: "Cài đặt giao hàng", exact: true }).click();
   const origin = page.getByRole("dialog", { name: "Nơi lấy hàng của phiên live", exact: true });
   await origin.getByRole("radio", { name: "Sử dụng vị trí hiện tại", exact: true }).check();
   const search = origin.getByRole("button", { name: "Tìm bưu cục GHN gần vị trí này", exact: true });
-  await expect(search).toBeEnabled(); await search.click();
+  await expect(origin.getByLabel("Địa chỉ cụ thể", { exact: true })).toHaveValue(stationPickup.address_line);
   await expect(origin.getByRole("region", { name: "Bản đồ chọn địa chỉ" })).toBeVisible();
   await expect(origin.locator(".station-pin")).toHaveCount(2);
   await expect(origin.getByRole("button", { name: "Chọn bưu cục GHN Chưa ánh xạ", exact: true })).toBeDisabled();
@@ -843,7 +690,7 @@ test("seller selects a nearby GHN station and buyer keeps the live after a stati
   expect(writes.some((entry) => entry.path.endsWith("/media-token"))).toBe(false);
   const buyer = await context.newPage();
   const buyerWrites = await mockAPI(buyer, false, true);
-  await buyer.route("**/api/orders/quote", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ unit_price: 80000, quantity: 1, items_subtotal: 80000, shipping_fee: 19000, total_amount: 99000, currency: "VND", pickup_province: "Thành phố Hà Nội", shipping: { provider: "ghn", environment: "staging", origin_type: "station_dropoff", station_id: 1888, station_name: "GHN Điểm gần", quote_only: true } }) }));
+  buyerWrites.command("shipping.quote", () => ({ data: { unit_price: 80000, quantity: 1, items_subtotal: 80000, shipping_fee: 19000, total_amount: 99000, currency: "VND", pickup_province: "Thành phố Hà Nội", shipping: { provider: "ghn", environment: "staging", origin_type: "station_dropoff", station_id: 1888, station_name: "GHN Điểm gần", quote_only: true } } }));
   await buyer.goto(`/#live/${roomID}`); await buyer.getByRole("button", { name: "Chọn mua", exact: true }).click();
   const checkout = buyer.getByRole("dialog", { name: "Đặt hàng", exact: true }); await fillDelivery(checkout);
   await expect(checkout.getByText("Phí tính từ GHN Điểm gần; người bán tự mang hàng ra bưu cục.", { exact: true })).toBeVisible();
@@ -856,7 +703,7 @@ test("seller selects a nearby GHN station and buyer keeps the live after a stati
 test("GHN station access failure preserves the manual pickup fallback", async ({ page, context }) => {
   await context.grantPermissions(["geolocation"]); await context.setGeolocation({ latitude: 21.028511, longitude: 105.804817 });
   const writes = await mockAPI(page, true); await carrierGPS(page);
-  await page.route("**/api/shipping/stations/nearby", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "shipping_stations_access_required" }) }));
+  writes.command("shipping.stations.nearby", () => ({ status: 503, data: { error: "shipping_stations_access_required" } }));
   await page.goto(`/#live/${roomID}`); await page.getByRole("button", { name: "Cài đặt giao hàng", exact: true }).click();
   const origin = page.getByRole("dialog", { name: "Nơi lấy hàng của phiên live", exact: true });
   await origin.getByRole("radio", { name: "Sử dụng vị trí hiện tại", exact: true }).check();
@@ -871,13 +718,13 @@ test("GHN station access failure preserves the manual pickup fallback", async ({
 
 test("late station results cannot replace a new search district", async ({ page, context }) => {
   await context.grantPermissions(["geolocation"]); await context.setGeolocation({ latitude: 21.028511, longitude: 105.804817 });
-  await mockAPI(page, true); await carrierGPS(page);
+  const writes = await mockAPI(page, true); await carrierGPS(page);
   let finish, started = false; const pending = new Promise((resolve) => { finish = resolve; });
-  await page.route("**/api/shipping/stations/nearby", async (route) => { started = true; await pending; await route.fulfill({ contentType: "application/json", body: JSON.stringify(nearbyStationResult) }).catch(() => {}); });
+  writes.command("shipping.stations.nearby", async (query) => { if (query.carrier_district_id !== 100) return { data: { data: [], complete: true, district: "Khu vực mới" } }; started = true; await pending; return { data: nearbyStationResult }; });
   await page.goto(`/#live/${roomID}`); await page.getByRole("button", { name: "Cài đặt giao hàng", exact: true }).click();
   const origin = page.getByRole("dialog", { name: "Nơi lấy hàng của phiên live", exact: true });
   await origin.getByRole("radio", { name: "Sử dụng vị trí hiện tại", exact: true }).check();
-  const search = origin.getByRole("button", { name: "Tìm bưu cục GHN gần vị trí này", exact: true }); await expect(search).toBeEnabled(); await search.click();
+  const search = origin.getByRole("button", { name: "Tìm bưu cục GHN gần vị trí này", exact: true });
   await expect.poll(() => started).toBe(true);
   await origin.getByLabel("Tỉnh / Thành phố", { exact: true }).selectOption("79");
   await origin.getByLabel("Quận / Huyện (GHN)", { exact: true }).selectOption("7900"); finish();

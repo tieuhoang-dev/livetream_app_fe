@@ -138,15 +138,6 @@ const store = (state) => {
   sessionStorage.setItem(storage, JSON.stringify(state));
   window.dispatchEvent(new Event("livemart-demo-change"));
 };
-export function subscribeDemoLives(query, { onData, onError }) {
-  const read = () => {
-    try { onData(demoRequest("/api/livestreams", { query })); }
-    catch (error) { onError(error); }
-  };
-  window.addEventListener("livemart-demo-change", read);
-  read();
-  return () => window.removeEventListener("livemart-demo-change", read);
-}
 const matches = (text, q) =>
   text
     .toLocaleLowerCase("vi")
@@ -183,7 +174,6 @@ export function demoRequest(
   if (area === "delivery" && key === "reverse-geocode") throw new Error("Tự điền địa chỉ từ GPS cần kết nối backend. Trong bản mẫu, hãy chọn Nhập địa chỉ.");
   state.shipping ??= Object.fromEntries([...new Set(products.map((product) => product.seller_id))].map((seller) => [seller, {
     pickup_address: { name: "Shop dữ liệu mẫu", phone: "0900000000", province_code: "1", province_name: provinces.find((p) => p.code === "1").name, ward: "Phường mẫu", address_line: "Địa chỉ shop mẫu", latitude: null, longitude: null },
-    same_province_fee: 25000, other_province_fee: 40000, free_shipping_from: null,
   }]));
   if (area === "sales" && key === "shipping-settings") {
     if (method === "GET") return { configured: Boolean(state.shipping[host]), settings: state.shipping[host] || null };
@@ -482,12 +472,12 @@ function demoQuote(state, body) {
   const item = live ? (state.allocations[live.id] || []).find((entry) => entry.product_id === product.id) : product;
   if (!item || item.stock_quantity < body.quantity) throw new Error("Kho không đủ hàng.");
   const settings = state.shipping[product.seller_id];
-  if (!settings) throw new Error("Shop chưa thiết lập địa chỉ lấy hàng và phí giao hàng.");
+  if (!settings) throw new Error("Shop chưa thiết lập địa chỉ lấy hàng.");
   const unit = live ? item.discount_price : product.price;
   const subtotal = Math.round(unit * body.quantity * 100) / 100;
   const local = settings.pickup_address.province_code === body.delivery.province_code;
-  let fee = local ? settings.same_province_fee : settings.other_province_fee;
-  let zone = local ? "same_province" : "other_province";
-  if (settings.free_shipping_from != null && subtotal >= settings.free_shipping_from) { fee = 0; zone = "free"; }
+  // Demonstration amounts are fixed examples, never seller-configured rates.
+  const fee = local ? 25000 : 40000;
+  const zone = local ? "same_province" : "other_province";
   return { unit_price: unit, quantity: body.quantity, items_subtotal: subtotal, shipping_fee: fee, total_amount: subtotal + fee, currency: "VND", shipping_zone: zone, pickup_province: settings.pickup_address.province_name };
 }

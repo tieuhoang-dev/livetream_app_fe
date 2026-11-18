@@ -1,4 +1,6 @@
-import { demoLiveCommand, demoRequest, subscribeDemoLives } from "./demo";
+import { demoRequest } from "./demo";
+import { RealtimeClient } from "./realtime/client";
+import { demoCommand, demoSubscribe } from "./realtime/demo";
 
 const configuredURL = (import.meta.env.VITE_PUBLIC_API_URL || "").replace(
   /\/+$/,
@@ -6,6 +8,10 @@ const configuredURL = (import.meta.env.VITE_PUBLIC_API_URL || "").replace(
 );
 const apiOrigin = import.meta.env.DEV ? "" : configuredURL;
 const messages = {
+  unauthorized: "Phiên đăng nhập chưa hợp lệ. Hãy đăng nhập lại.",
+  realtime_timeout: "WebSocket phản hồi quá chậm. Kiểm tra trạng thái thao tác trước khi thử lại.",
+  realtime_disconnected: "Mất kết nối realtime. Đang kết nối lại; thao tác vừa gửi có thể đã được xử lý.",
+  shipping_station_unavailable: "Chưa tìm được bưu cục có tọa độ và khu vực hợp lệ. Hãy chọn bưu cục hoặc dùng địa chỉ lấy hàng.",
 	shipping_provider_not_configured: "Hệ thống báo phí vận chuyển chưa được cấu hình. Vui lòng liên hệ quản trị viên.",
 	shipping_unavailable: "Chưa lấy được báo phí vận chuyển. Vui lòng thử lại.",
 	shipping_address_required: "Chọn đủ khu vực giao hàng theo danh mục GHN để lấy báo phí.",
@@ -20,8 +26,8 @@ const messages = {
 	geocoding_unavailable: "Chưa tìm được địa chỉ từ bản đồ. Hãy thử lại hoặc chọn Nhập địa chỉ.",
 	location_not_supported: "Chưa xác định được tỉnh/thành tại vị trí này ở Việt Nam. Hãy chọn Nhập địa chỉ.",
 	invalid_delivery_address: "Kiểm tra họ tên, số điện thoại và địa chỉ nhận hàng (hoặc địa chỉ lấy hàng của shop).",
-	invalid_shipping_settings: "Nhập đầy đủ phí ship hợp lệ. Phí có thể bằng 0; ngưỡng miễn phí phải lớn hơn 0.",
-	shipping_not_configured: "Shop chưa thiết lập địa chỉ lấy hàng và phí giao hàng. Vui lòng liên hệ người bán.",
+	invalid_shipping_settings: "Kiểm tra thông tin địa chỉ lấy hàng.",
+	shipping_not_configured: "Shop chưa thiết lập địa chỉ lấy hàng. Vui lòng liên hệ người bán.",
 	checkout_changed: "Giá hoặc phí ship vừa thay đổi. Hãy kiểm tra tổng tiền mới và xác nhận lại.",
 	duplicate_request_conflict: "Yêu cầu đặt hàng đã được dùng với thông tin khác. Hãy mở lại hộp đặt hàng.",
 	invalid_checkout_request: "Thông tin đặt hàng chưa hợp lệ.",
@@ -94,71 +100,13 @@ export async function request(
 }
 
 export function apiFor(mode, token) {
-  const api = mode === "demo"
-    ? async (path, options) => demoRequest(path, options)
-    : (path, options) => request(path, { ...options, token });
-  api.subscribeLives = mode === "demo" ? subscribeDemoLives : subscribeLives;
-  api.mode = mode;
+  const api = mode === "demo" ? async (path, options) => demoRequest(path, options) : (path, options) => request(path, { ...options, token });
+  const url = new URL(`${apiOrigin}/api/ws`, location.origin); url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  const realtime = mode === "api" ? new RealtimeClient(url, { token, error: (code, status) => Object.assign(new Error(messages[code] || code), { code, status }) }) : null;
+  api.command = mode === "demo" ? demoCommand : (type, payload, options) => realtime.request(type, payload, options);
+  api.subscribe = mode === "demo" ? demoSubscribe : (type, payload, callbacks) => realtime.subscribe(type, payload, callbacks);
+  api.close = () => realtime?.close(); api.mode = mode; api.token = token;
   return api;
-}
-
-// The public catalog socket is independent of /api/auth/ws, so browsing does
-// not disconnect chat and does not require signing in.
-function subscribeLives(query, { onData, onError }) {
-  const url = new URL(`${apiOrigin}/api/livestreams/ws`, location.origin);
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  let stopped = false;
-  let socket;
-  let timer;
-  let timeout;
-  let retryDelay = 500;
-  function connect() {
-    if (stopped) return;
-    let ws;
-    function reconnect() {
-      if (stopped || socket !== ws) return;
-      clearTimeout(timeout);
-      if (ws) {
-        ws.onclose = ws.onerror = null;
-        ws.close();
-      }
-      onError(new Error("Mất kết nối danh sách live. Đang kết nối lại…"));
-      timer = setTimeout(connect, retryDelay);
-      retryDelay = Math.min(retryDelay * 2, 15000);
-    }
-    try {
-      ws = new WebSocket(url);
-      socket = ws;
-    } catch {
-      socket = ws;
-      reconnect();
-      return;
-    }
-    timeout = setTimeout(reconnect, 8000);
-    ws.onopen = () => ws.send(JSON.stringify({ type: "list_lives", request_id: "catalog", query }));
-    ws.onmessage = ({ data }) => {
-      if (stopped || socket !== ws) return;
-      let message;
-      try { message = JSON.parse(data); } catch { return; }
-      if (message.request_id !== "catalog") return;
-      if (message.type === "list_lives_success" && Array.isArray(message.data)) {
-        clearTimeout(timeout);
-        retryDelay = 500;
-        onData(message);
-      } else if (message.type === "list_lives_error") {
-        clearTimeout(timeout);
-        onError(new Error(message.error === "invalid_query" ? messages.invalid_query : "Không tải được danh sách live. Hãy thử lại."));
-      }
-    };
-    ws.onerror = ws.onclose = reconnect;
-  }
-  connect();
-  return () => {
-    stopped = true;
-    clearTimeout(timer);
-    clearTimeout(timeout);
-    socket?.close();
-  };
 }
 
 export function readSession() {
@@ -178,54 +126,6 @@ export function readSession() {
   }
   sessionStorage.removeItem("livemart-token");
   return null;
-}
-
-export function liveCommand(mode, token, type, content) {
-  if (mode === "demo")
-    return Promise.resolve().then(() => demoLiveCommand(type, content));
-  const url = new URL(`${apiOrigin}/api/auth/ws`, location.origin);
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  url.searchParams.set("token", token);
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(url);
-    let settled = false;
-    const timeout = setTimeout(
-      () =>
-        finish(
-          reject,
-          new Error(
-            "WebSocket không phản hồi. Hãy kiểm tra trạng thái live trước khi thử lại.",
-          ),
-        ),
-      8000,
-    );
-    function finish(callback, value) {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      ws.close();
-      callback(value);
-    }
-    ws.onopen = () => ws.send(JSON.stringify({ type, content }));
-    ws.onmessage = ({ data }) => {
-      let message;
-      try {
-        message = JSON.parse(data);
-      } catch {
-        return;
-      }
-      if (message.type === `${type}_success`) finish(resolve, message);
-      if (message.type === `${type}_error`)
-        finish(reject, new Error(message.error));
-    };
-    ws.onerror = ws.onclose = () =>
-      finish(
-        reject,
-        new Error(
-          "Không mở được kết nối live. Kiểm tra backend và phiên đăng nhập.",
-        ),
-      );
-  });
 }
 
 export function mediaURL(value) {
